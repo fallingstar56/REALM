@@ -52,7 +52,9 @@ cd REALM
 git clone https://github.com/Physical-Intelligence/openpi.git
 cd openpi
 uv sync
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.5 uv run scripts/serve_policy.py policy:checkpoint --policy.config=gs://openpi-assets/checkpoints/pi0_fast_droid_jointpos
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.5 uv run scripts/serve_policy.py policy:checkpoint \
+  --policy.config=pi05_droid_jointpos_polaris \
+  --policy.dir=gs://openpi-assets/checkpoints/polaris/pi05_droid_jointpos_polaris
 ```
 > ❗ Set XLA_PYTHON_CLIENT_MEM_FRACTION such that you have at least 8GB+ free on the GPU for isaacsim.
 
@@ -69,7 +71,11 @@ source ./scripts/run_apptainer.sh
 
 3. Inside the container run:
 ```
+# With real-time GUI:
 python /app/examples/01_pi0_eval.py
+
+# In headless mode:
+OMNIGIBSON_HEADLESS=1 python /app/examples/01_pi0_eval.py
 ```
 
 This should produce a rollout video and a numpy report file with the evaluation results inside the logs folder.
