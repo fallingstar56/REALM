@@ -52,7 +52,14 @@ cd REALM
 git clone https://github.com/Physical-Intelligence/openpi.git
 cd openpi
 uv sync
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.5 uv run scripts/serve_policy.py policy:checkpoint --policy.config=gs://openpi-assets/checkpoints/pi0_fast_droid_jointpos
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.5 uv run scripts/serve_policy.py policy:checkpoint \
+    --policy.config=pi0_fast_droid_jointpos \
+    --policy.dir=gs://openpi-assets/checkpoints/pi0_fast_droid_jointpos
+
+# [ALTERNATIVE] running the latest pi0.5 in jointpos mode:
+uv run scripts/serve_policy.py policy:checkpoint \
+    --policy.config=pi05_droid_jointpos_polaris \
+    --policy.dir=gs://openpi-assets/checkpoints/polaris/pi05_droid_jointpos_polaris
 ```
 > ❗ Set XLA_PYTHON_CLIENT_MEM_FRACTION such that you have at least 8GB+ free on the GPU for isaacsim.
 
@@ -87,7 +94,7 @@ OMNIGIBSON_HEADLESS=1 python /app/examples/02_eval_dynamic_scenes.py \
     --task_id <TASK_ID [0-9]> \
     --repeats 25 \
     --max_steps 800 \
-    --model pi0_FAST
+    --model <pi0_FAST>
 ```
 
 | PERTURBATION_ID | Perturbation | Description                                                                                     | Category |
@@ -122,7 +129,7 @@ OMNIGIBSON_HEADLESS=1 python /app/examples/02_eval_dynamic_scenes.py \
 | 8       | open_drawer |
 | 9       | close_drawer |
 
-In our paper, we evaluated the three models on each of the 10 tasks, under all 16 perturbation settings
+In our paper, we evaluated three models on each of the 10 tasks, under all 16 perturbation settings
 with a sample size of 25 rollouts at 800 time-steps. Each number in the table below is then obtained by 
 averaging the results over these 10 tasks per perturbation.
 
