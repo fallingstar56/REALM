@@ -94,7 +94,7 @@ OMNIGIBSON_HEADLESS=1 python /app/examples/02_eval_dynamic_scenes.py \
     --task_id <TASK_ID [0-9]> \
     --repeats 25 \
     --max_steps 800 \
-    --model <pi0_FAST>
+    --model pi0_FAST
 ```
 
 | PERTURBATION_ID | Perturbation | Description                                                                                     | Category |
