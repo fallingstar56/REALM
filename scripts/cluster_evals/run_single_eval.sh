@@ -13,16 +13,20 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
-PERTURBATION_ID="$SLURM_ARRAY_TASK_ID"
+echo $SLURM_ARRAY_TASK_ID
+echo "debug.."
+
 TASK_ID="$1"
-REPEATS=${2:-25}
-MAX_STEPS=${3:-800}
-MODEL="$4"
+PERTURBATION_ID="$2"
+#PERTURBATION_ID="$SLURM_ARRAY_TASK_ID"
+REPEATS=$3
+MAX_STEPS=$4
 POLICY_CONFIG="$5"
 CHECKPOINT_PATH="$6"
-BASE_PORT="$7"
+BASE_PORT=$7
 EXPERIMENT_NAME="$8"
-POLICY_RUN_DIR="$9"
+RUN_ID="$9"
+POLICY_RUN_DIR="${10}"
 
 REALM_ROOT=$(pwd)
 
@@ -48,6 +52,10 @@ sleep 60
 #---------------------------------------------------------------------------------
 
 cd $REALM_ROOT
+mkdir -p "$REALM_ROOT/tmp"
+mkdir -p "$REALM_ROOT/mamba_cache/$SLURM_JOB_ID"
+mkdir -p "$REALM_ROOT/pip_cache/$SLURM_JOB_ID"
+
 apptainer exec \
   --userns \
   --nv \
@@ -75,6 +83,7 @@ apptainer exec \
   --task_id $TASK_ID \
   --repeats $REPEATS \
   --max_steps $MAX_STEPS \
-  --model $MODEL \
+  --model $CHECKPOINT_PATH \
   --port $port \
+  --run_id $RUN_ID \
   --experiment_name $EXPERIMENT_NAME
