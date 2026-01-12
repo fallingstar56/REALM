@@ -55,6 +55,7 @@ cd $REALM_ROOT
 mkdir -p "$REALM_ROOT/tmp"
 mkdir -p "$REALM_ROOT/mamba_cache/$SLURM_JOB_ID"
 mkdir -p "$REALM_ROOT/pip_cache/$SLURM_JOB_ID"
+MODEL_NAME=$(basename "$(dirname "${CHECKPOINT_PATH%/}")")_$(basename "${CHECKPOINT_PATH%/}")
 
 apptainer exec \
   --userns \
@@ -83,7 +84,7 @@ apptainer exec \
   --task_id $TASK_ID \
   --repeats $REPEATS \
   --max_steps $MAX_STEPS \
-  --model $CHECKPOINT_PATH \
+  --model $MODEL_NAME \
   --port $port \
   --run_id $RUN_ID \
   --experiment_name $EXPERIMENT_NAME
