@@ -43,6 +43,7 @@ class VideoRecorder:
              frame_img = frame_img.astype(np.uint8)
 
         frame_path = os.path.join(self.temp_frame_dir, f"frame_{self.count:05d}.png")
+        os.makedirs(os.path.dirname(frame_path), exist_ok=True)
         Image.fromarray(frame_img).save(frame_path)
         self.frame_filenames.append(frame_path)
         self.count += 1

@@ -117,11 +117,13 @@ def evaluate(
     for run_id in range(repeats):
         # ------------------------ pre-configure each run --------------------------------
         # Seeding: ensure deterministic behavior per run, independent of previous runs
-        seed = 1234 + run_id
+        seed = 1234
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
         if run_id < start_repeat:
             continue
