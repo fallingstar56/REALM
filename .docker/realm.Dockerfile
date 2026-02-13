@@ -16,7 +16,11 @@ COPY packages/openpi-client /opt/openpi-client
 RUN micromamba install -n omnigibson -y -c conda-forge wandb moviepy && \
     micromamba run -n omnigibson pip install /opt/openpi-client && \
     cp /opt/modified_entity_prim.py /omnigibson-src/omnigibson/prims/entity_prim.py && \
-    rm /opt/modified_entity_prim.py
+    rm /opt/modified_entity_prim.py && \
+    micromamba -n omnigibson -y install -c conda-forge dm-control && \
+    micromamba run -n omnigibson pip install dm-robotics-controllers dm-robotics-transformations dm-robotics-geometry && \
+    micromamba run -n omnigibson pip install dm-robotics-moma dm-robotics-manipulation && \
+    micromamba run -n omnigibson pip install numpy==1.26.0
 
 WORKDIR /omnigibson-src
 
