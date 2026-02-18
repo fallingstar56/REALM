@@ -34,11 +34,11 @@ gm.ENABLE_HQ_RENDERING = False #True
 gm.ENABLE_FLATCACHE = False #True
 
 ep_id = "episode_000001"
-action_cartesian_pos = np.load(f"data/droid_1.0.1/{ep_id}_action.cartesian_position.npy", allow_pickle=True)
-action_qpos = np.load(f"data/droid_1.0.1/{ep_id}_action.joint_position.npy", allow_pickle=True)
-
-state_cartesian_pos = np.load(f"data/droid_1.0.1/{ep_id}_observation.state.cartesian_position.npy", allow_pickle=True)
-state_qpos = np.load(f"data/droid_1.0.1/{ep_id}_observation.state.joint_position.npy", allow_pickle=True)
+# action_cartesian_pos = np.load(f"data/droid_1.0.1/{ep_id}_action.cartesian_position.npy", allow_pickle=True)
+# action_qpos = np.load(f"data/droid_1.0.1/{ep_id}_action.joint_position.npy", allow_pickle=True)
+#
+# state_cartesian_pos = np.load(f"data/droid_1.0.1/{ep_id}_observation.state.cartesian_position.npy", allow_pickle=True)
+# state_qpos = np.load(f"data/droid_1.0.1/{ep_id}_observation.state.joint_position.npy", allow_pickle=True)
 
 cfg = dict()
 
@@ -62,7 +62,7 @@ cfg["robots"] = [
         "obs_modalities": ["proprio"], #"rgb",
         "proprio_obs": ["joint_qpos"],
         "position": [0, 0, 0], #0.87],
-        "reset_joint_pos": list(state_qpos[0]) + [0, 0, 0, 0],
+        "reset_joint_pos": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], #list(state_qpos[0]) + [0, 0, 0, 0],
         "orientation": T.euler2quat(th.tensor([0, 0, 0], dtype=th.float32)).tolist(),
         "control_freq": freq,
         "action_normalize": False,
@@ -196,8 +196,8 @@ for t in range(175):
     # sample = env.action_space.sample()
     robot_state = obs['franka']['proprio']#[:7].cpu().numpy()
     #
-    # base_im = obs['external']['external_sensor0']['rgb'].cpu().numpy()[..., :3]
-    # video.append(base_im)
+    base_im = obs['external']['external_sensor0']['rgb'].cpu().numpy()[..., :3]
+    video.append(base_im)
     #
     # if t < 30:
     #     intended_state = reach_state
@@ -224,22 +224,22 @@ for t in range(175):
 
     if t % 30 == 0:
         flip = not flip
-    #a[2] = 0.01 if flip else -0.01
+    a[2] = 0.01 if flip else -0.01
     #a[4] = 0.5 if flip else -0.5
 
-    if t < len(action_cartesian_pos):
-        a[:6] = action_cartesian_pos[t]
-        print(f"{t} {a}")
-        #a[3:6] = np.array([3.013, -0.28, -0.263])
-        diff = th.from_numpy(state_qpos[t]) - robot_state[:7]
-        diff[diff.abs() < 0.01] = 0
-        print(f"{t} diff", diff)
+    # if t < len(action_cartesian_pos):
+    #     a[:6] = action_cartesian_pos[t]
+    #     print(f"{t} {a}")
+    #     #a[3:6] = np.array([3.013, -0.28, -0.263])
+    #     diff = th.from_numpy(state_qpos[t]) - robot_state[:7]
+    #     diff[diff.abs() < 0.01] = 0
+    #     print(f"{t} diff", diff)
 
     #a[3:6] = flip_pose_pointing_down(a[3:6])
     obs, rew, terminated, truncated, info = env.step(th.from_numpy(a))
 
 video = np.stack(video)
-save_filename = f"/app/logs/debug_weird_gripper"
+save_filename = f"/app/logs/debug_ee_control"
 ImageSequenceClip(list(video), fps=15).write_videofile(save_filename + ".mp4", codec="libx264")
 
 #og.shutdown()
