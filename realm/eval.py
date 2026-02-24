@@ -334,21 +334,21 @@ if __name__ == "__main__":
     parser.add_argument('--task_id', type=int, required=False, default=0)
     parser.add_argument('--repeats', type=int, required=False, default=5)
     parser.add_argument('--max_steps', type=int, required=False, default=500)
+    parser.add_argument('--task_cfg_path', type=str, required=False, default=None)
     parser.add_argument('--model_name', type=str, required=True, default=None)
     parser.add_argument('--model_type', type=str, required=True, default=None)
     parser.add_argument('--port', type=int, required=True)
     parser.add_argument('--experiment_name', type=str, required=True)
     parser.add_argument('--run_id', type=str, required=False, default=None)
     parser.add_argument('--log_dir', type=str, required=False, default=None)
-    parser.add_argument('--multi-view', type=str, default='false', help='Enable multi-view camera (true/false)')
+    parser.add_argument('--rendering_mode', type=str, required=False, default=None, help='Omnigibson rendering mode (pt, rt, r)')
+    parser.add_argument('--multi-view', action='store_true', help='Enable second external camera')
     parser.add_argument('--resume', action='store_true', help='Resume from existing run report if found')
-    parser.add_argument('--rendering_mode', type=str, required=False, default=None,
-                        help='Omnigibson rendering mode (pt, rt, r)')
     args = parser.parse_args()
+
     assert args.model_name is not None
     assert args.experiment_name is not None
-
-    multi_view = args.multi_view.lower() == 'true'
+    assert not (args.task_cfg_path and args.task_id), f"Either task --task_cfg_path or --task_id should be specified, but not both."
 
     log_dir = args.log_dir if args.log_dir is not None else "/app/logs"
     log_dir += f"/{args.experiment_name}"
@@ -363,9 +363,10 @@ if __name__ == "__main__":
         model=args.model_name,
         port=args.port,
         log_dir=log_dir,
-        multi_view=multi_view,
+        multi_view=args.multi_view,
         resume=args.resume,
-        rendering_mode=args.rendering_mode
+        rendering_mode=args.rendering_mode,
+        task_cfg_path=args.task_cfg_path
     )
     og.shutdown()
     sys.exit(0)
