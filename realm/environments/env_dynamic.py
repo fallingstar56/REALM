@@ -91,17 +91,22 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         task_cfg_path="REALM_DROID10/put_green_block_into_bowl/default.cfg",
         perturbations=None,
         common_freq: int = None,
+        no_rendering: bool = False,
         multi_view: bool = False,
-        rendering_mode: str = "rt"
+        rendering_mode: str = "rt",
+        robot: str = "DROID"
     ) -> None:
+        assert not (multi_view and no_rendering), f"Multi-view rendering was enabled during no_rendering mode. Either one is likely a mistake."
         self.task_cfg_path = "/".join(task_cfg_path.split("/")[-3:])
         self.use_droid_with_base = True if self.task_cfg_path.split("/")[0] == "REALM_DROID10" else False # TODO: infer properly from the task/scene config yaml
+        self.robot_name = robot
         self.multi_view = multi_view
+        self.no_rendering = no_rendering
         self.rendering_mode = rendering_mode
         self.config_path = config_path
         self.scene_model = scene_model
         self.scene_part = scene_part
-        self.reset_qpos = reset_qpos
+        self.reset_qpos = reset_qpos if reset_qpos is not None else DEFAULT_RESET_JOINTPOS
         self.common_freq = common_freq
         self.supported_pertrubations = {
             'Default': self.default,
@@ -242,8 +247,10 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         else:
             reset_joint_pos[:7] = DEFAULT_RESET_JOINTPOS
 
-        #cfg_robot = yaml.load(open(f"{self.config_path}/robots/DROID.yaml", "r"), Loader=yaml.FullLoader)
-        cfg_robot = yaml.load(open(f"{self.config_path}/robots/DROID_default_pd_control.yaml", "r"), Loader=yaml.FullLoader) # TODO: revert
+
+        #cfg_robot = yaml.load(open(f"{self.config_path}/robots/{self.robot_name}}.yaml", "r"), Loader=yaml.FullLoader)
+        cfg_robot = yaml.load(open(f"{self.config_path}/robots/DROID_default_pd_control.yaml", "r"), Loader=yaml.FullLoader) # TODO: revert this to the above
+
         cfg_robot["robots"][0]["position"] = robot_pos
         cfg_robot["robots"][0]["orientation"] = omnigibson_transform_utils.euler2quat(
             torch.tensor(robot_rot, dtype=torch.float32)).tolist()
@@ -315,29 +322,30 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
             assert "position" in obj
 
         # ---------------------------------------- external camera config ----------------------------------------
-        ext_cam1_pose = task_cfg["camera_extrinsics"]["cam1"] if "camera_extrinsics" in task_cfg else "default"
-        if "camera_extrinsics" in task_cfg and "cam2" in task_cfg["camera_extrinsics"]:
-            ext_cam2_pose = task_cfg["camera_extrinsics"]["cam2"]
-        else:
-            ext_cam2_pose = "default" if ext_cam1_pose == "CP3" else "CP3"
+        if not self.no_rendering:
+            ext_cam1_pose = task_cfg["camera_extrinsics"]["cam1"] if "camera_extrinsics" in task_cfg else "default"
+            if "camera_extrinsics" in task_cfg and "cam2" in task_cfg["camera_extrinsics"]:
+                ext_cam2_pose = task_cfg["camera_extrinsics"]["cam2"]
+            else:
+                ext_cam2_pose = "default" if ext_cam1_pose == "CP3" else "CP3"
 
-        base_cam_pos, base_cam_rot = self.construct_ext_cam_pose_by_name(ext_cam1_pose, robot_pos, robot_rot)
+            base_cam_pos, base_cam_rot = self.construct_ext_cam_pose_by_name(ext_cam1_pose, robot_pos, robot_rot)
 
-        cfg_external_sensors = yaml.load(open(f"{self.config_path}/env/external_sensors/camera_config.yaml", "r"), Loader=yaml.FullLoader)
-        cfg_external_sensors["external_sensors"][0]["position"] = base_cam_pos
-        cfg_external_sensors["external_sensors"][0]["orientation"] = base_cam_rot
+            cfg_external_sensors = yaml.load(open(f"{self.config_path}/env/external_sensors/camera_config.yaml", "r"), Loader=yaml.FullLoader)
+            cfg_external_sensors["external_sensors"][0]["position"] = base_cam_pos
+            cfg_external_sensors["external_sensors"][0]["orientation"] = base_cam_rot
 
-        if self.multi_view:
-            second_base_cam_pos, second_base_cam_rot = self.construct_ext_cam_pose_by_name(ext_cam2_pose, robot_pos,
-                                                                                           robot_rot)
-            cfg_external_sensors["external_sensors"][1]["position"] = second_base_cam_pos
-            cfg_external_sensors["external_sensors"][1]["orientation"] = second_base_cam_rot
-        else:
-            del cfg_external_sensors["external_sensors"][1]
+            if self.multi_view:
+                second_base_cam_pos, second_base_cam_rot = self.construct_ext_cam_pose_by_name(ext_cam2_pose, robot_pos,
+                                                                                               robot_rot)
+                cfg_external_sensors["external_sensors"][1]["position"] = second_base_cam_pos
+                cfg_external_sensors["external_sensors"][1]["orientation"] = second_base_cam_rot
+            else:
+                del cfg_external_sensors["external_sensors"][1]
 
-        if "env" not in cfg:
-            cfg["env"] = {}
-        cfg["env"].update(cfg_external_sensors)
+            if "env" not in cfg:
+                cfg["env"] = {}
+            cfg["env"].update(cfg_external_sensors)
 
         return (copy.deepcopy(cfg),
                 copy.deepcopy([o for o in task_cfg["main_objects"]]),
@@ -870,15 +878,14 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         if obs is None:
             obs, _ = self.reset()
 
-        is_gripper_closed = True
-        for t in range(19):
+        #for t in range(30):
+        for t in range(300):
+            #self.reset_qpos[:7],
             new_action = np.concatenate((
-                obs['DROID']['proprio'][:7].cpu().numpy(),
+                np.zeros(7),
                 np.atleast_1d(np.zeros(1))
             ))
-            if t != 0 and t % 10 == 0:
-                is_gripper_closed = not is_gripper_closed
-            new_action[-1] = 1 if is_gripper_closed else -1
+            new_action[-1] = 1 if t < 15 else -1
 
             obs, rew, terminated, truncated, info = self.step(new_action)
 

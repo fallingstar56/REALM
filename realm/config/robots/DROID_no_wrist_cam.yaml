@@ -27,10 +27,3 @@ robots:
         gripper_0:
           name: "CustomGripperController"
           mode: "binary"
-    sensor_config:
-      VisionSensor:
-        sensor_kwargs:
-          image_height: 720
-          image_width: 1280
-          focal_length: 2.8
-

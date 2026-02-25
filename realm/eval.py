@@ -49,9 +49,16 @@ SUPPORTED_PERTURBATIONS = [
 ]
 
 
-def set_sim_config(rendering_mode=None):
-    gm.DEFAULT_SIM_STEP_FREQ = 15
-    gm.DEFAULT_RENDERING_FREQ = 15
+def set_sim_config(rendering_mode=None, robot="DROID"):
+    if robot == "DROID":
+        gm.DEFAULT_SIM_STEP_FREQ = 15
+        gm.DEFAULT_RENDERING_FREQ = 15
+    elif robot == "WidowX":
+        gm.DEFAULT_SIM_STEP_FREQ = 5
+        gm.DEFAULT_RENDERING_FREQ = 5
+    else:
+        raise NotImplementedError(f"Unknown robot embodiment: {robot}")
+
     gm.DEFAULT_PHYSICS_FREQ = 120
     gm.ENABLE_TRANSITION_RULES = False # this needs to be off to avoid bug with sludge state during collision: https://github.com/StanfordVL/BEHAVIOR-1K/issues/1201
     gm.ENABLE_OBJECT_STATES = True # this needs to be on because push_switch task usees the ToggledOn state
@@ -79,11 +86,12 @@ def evaluate(
         resume=False,
         multi_view=False,
         rendering_mode=None,
-        task_cfg_path=None
+        task_cfg_path=None,
+        robot="DROID"
 ):
     start = time.perf_counter()
     og.log.info(f"DEBUG: Begin eval: {time.perf_counter() - start:.4f}s")
-    set_sim_config(rendering_mode=rendering_mode)
+    set_sim_config(rendering_mode=rendering_mode, robot="DROID")
 
     # -------------------- Create the environment + client --------------------
     if task_cfg_path is None:
@@ -105,7 +113,8 @@ def evaluate(
         task_cfg_path=task_cfg_path,
         perturbations=perturbations,
         multi_view=multi_view,
-        rendering_mode=rendering_mode
+        rendering_mode=rendering_mode,
+        robot=robot
     )
     og.log.info(f"DEBUG: Env created: {time.perf_counter() - start:.4f}s")
 
@@ -147,10 +156,8 @@ def evaluate(
         actions = []
         action_buffer = Queue()
 
-        obs, _ = env.reset()
-        instruction = env.instruction
-
         # -------------------- Rollout loop --------------------
+        obs, _ = env.reset()
         obs, rew, terminated, truncated, info = env.warmup(obs)
 
         t = 0
@@ -199,7 +206,7 @@ def evaluate(
 
             if action_buffer.empty():
                 pred_action_chunk = client.infer(
-                    instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
+                    env.instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
                     use_base_im_second=(env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False)
                 )
 
@@ -287,7 +294,7 @@ def evaluate(
             "run_id": run_id,
             "task": task,
             "perturbation": perturbations[0],
-            "instruction": instruction,
+            "instruction": env.instruction,
             "model": model,
             "real2sim": "Simulated",
             "env": "REALM",

@@ -352,3 +352,10 @@ def add_poses(delta, source, degrees=False):
     rot_sum = add_angles(delta[3:6], source[3:6], degrees=degrees)
     result = np.concatenate([lin_sum, rot_sum])
     return result
+
+
+def flip_pose_pointing_down(rpy_vec):
+    r_old = Rotation.from_euler('xyz', rpy_vec)
+    flip = Rotation.from_euler('xyz', [torch.pi, 0, 0])
+    r_new = r_old * flip
+    return r_new.as_euler('xyz')

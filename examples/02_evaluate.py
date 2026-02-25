@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     assert args.model_name is not None
     assert args.experiment_name is not None
-    assert not (args.task_cfg_path and args.task_id), f"Either task --task_cfg_path or --task_id should be specified, but not both."
+    #assert not (args.task_cfg_path and args.task_id), f"Either task --task_cfg_path or --task_id should be specified, but not both."
 
     log_dir = args.log_dir if args.log_dir is not None else "/app/logs"
     log_dir += f"/{args.experiment_name}"

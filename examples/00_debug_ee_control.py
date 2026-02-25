@@ -16,6 +16,7 @@ else:
     from realm.robots.droid_arm import DROID
 
 from omnigibson.controllers import REGISTERED_CONTROLLERS
+from realm.helpers import flip_pose_pointing_down
 from realm.robots.droid_joint_controller import IndividualJointPDController
 from realm.robots.droid_ee_controller import DroidEndEffectorController
 if "CustomJointController" not in REGISTERED_CONTROLLERS:
@@ -181,13 +182,6 @@ grasp_state = np.array([
 reach_state = grasp_state.copy()
 reach_state[1] = 0
 reach_state[6] += .3
-
-from scipy.spatial.transform import Rotation as R
-def flip_pose_pointing_down(rpy_vec):
-    r_old = R.from_euler('xyz', rpy_vec)
-    flip = R.from_euler('xyz', [th.pi, 0, 0])
-    r_new = r_old * flip
-    return r_new.as_euler('xyz')
 
 video = []
 close = False
