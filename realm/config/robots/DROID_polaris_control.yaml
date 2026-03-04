@@ -8,10 +8,10 @@ robots:
     action_type: "continuous"
     friction: [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ]
     armature: [ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ]
-    controller_name: "JointController"
+    controller_name: "IndividualJointPDController"
     controller_config:
         arm_0:
-            name: "JointController"
+            name: "IndividualJointPDController"
             "motor_type": "position"
             control_freq: 15
             use_delta_commands: False
@@ -20,8 +20,10 @@ robots:
             use_cc_compensation: False
             command_output_limits: null
             command_input_limits: null
-            kp: 80
-            damping_ratio: 4
+            kp: 400
+            kd: 80
+            max_effort: [ 87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0 ]
+            min_effort: [ -87.0, -87.0, -87.0, -87.0, -12.0, -12.0, -12.0 ]
         gripper_0:
           name: "CustomGripperController"
           mode: "binary"
