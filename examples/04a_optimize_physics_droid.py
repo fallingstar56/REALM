@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import numpy as np
 import torch
@@ -21,7 +22,7 @@ if __name__ == "__main__":
     log_dir = f"/app/logs/replay_trajectory/{run_id}"
     task_cfg_path = f"IMPACT/trajectory_replay/default.yaml"
     rendering_mode = "r"
-    traj_path = "/app/data/droid_1.0.1"
+    traj_path = "/app/data/droid_1.0.1/extracted_eps/chunk-000/"
 
     set_sim_config(rendering_mode=rendering_mode)
     env = RealmEnvironmentDynamic(
@@ -39,24 +40,27 @@ if __name__ == "__main__":
 
     # sigma0 is the initial step-size (standard deviation) for the search.
     # A good starting point is often 0.1 to 1.0, depending on the scale of your variables.
-    initial_sigma = 0.075
+    initial_sigma = 0.5 #0.075
 
     # --- 4. Define CMA-ES options (optional but recommended) ---
     # See https://cma-es.github.io/apidocs-pycma/cma.evolution_strategy.CMAEvolutionStrategy.html#cma.evolution_strategy.CMAOptions
     # for a full list of options.
     options = {
         'seed': 42,  # For reproducibility
-        'maxfevals': 500,  # Maximum number of function evaluations
-        'popsize': 100,  # Population size (number of solutions evaluated per iteration)
-        'tolfun': 1e-6,  # Tolerance for cost function value
-        'tolx': 1e-6,  # Tolerance for variable changes
+        'maxfevals': 55, #500,  # Maximum number of function evaluations
+        'popsize': 11, #100,  # Population size (number of solutions evaluated per iteration)
+        'tolfun': 1.0,  # Tolerance for cost function value
+        'tolx': 1e-3,  # Tolerance for variable changes
         'verb_disp': 1,  # Display progress every X iterations
         'verbose': -9,  # Reduce verbosity of intermediate output
         'bounds': [0, 2]  # Example for boundary constraints on *each* flattened parameter
     }
 
     # --- 5. Run the optimization ---
-    def replay_error():
+    from realm.utils import set_flat_physics_params
+    
+    def replay_error(x):
+        set_flat_physics_params(env, x)
         return cost_function(env=env, traj_path=traj_path, max_eps=args.max_eps)
 
     es = cma.fmin(
@@ -86,6 +90,10 @@ if __name__ == "__main__":
 
     print("\nOptimized friction:\n", optimal_friction)
     print("\nOptimized armature:\n", optimal_armature)
+
+    # Save results if needed
+    os.makedirs(log_dir, exist_ok=True)
+    np.save(f"{log_dir}/best_params.npy", best_flat_params)
 
     og.shutdown()
     sys.exit(0)
