@@ -118,6 +118,7 @@ def cost_function(env: RealmEnvironmentDynamic, traj_path: str, max_eps: int = 5
         ep_mode = 'npy'
 
     cost = 0.0
+    evaluated_eps = 0
     for ep in ep_paths:
         try:
             if ep_mode == 'hdf5':
@@ -139,18 +140,19 @@ def cost_function(env: RealmEnvironmentDynamic, traj_path: str, max_eps: int = 5
                 continue
 
             res_dict = replay_traj(env, traj_qpos_actions, traj_qpos_gt, traj_ee_gt, dof=dof)
-            
-            # Cumulative MSE cost
-            cost += 10 * np.sum(np.square(res_dict["qpos_err"])) # upweight qpos error over EE error due to magnitude
+
+            # Average MSE cost per step
+            ep_cost = 10 * np.mean(np.square(res_dict["qpos_err"])) # upweight qpos error over EE error due to magnitude
             if res_dict["ee_pos_err"] is not None:
-                cost += np.sum(np.square(res_dict["ee_pos_err"]))
-            print(ep, cost)
+                ep_cost += np.mean(np.square(res_dict["ee_pos_err"]))
+            cost += ep_cost
+            print(ep, ep_cost)
+            evaluated_eps += 1
         except Exception as e:
             print(f"Error evaluating episode {ep}: {e}")
             continue
 
-    return cost
-
+    return cost / max(1, evaluated_eps)
 
 def plot_err(res_dict, ep_name, log_dir, plot_title=None):
     plot_title = ep_name if plot_title is None else plot_title

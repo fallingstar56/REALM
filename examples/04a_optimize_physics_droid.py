@@ -63,19 +63,25 @@ if __name__ == "__main__":
         set_flat_physics_params(env, x)
         return cost_function(env=env, traj_path=traj_path, max_eps=args.max_eps)
 
-    es = cma.fmin(
-        replay_error,
-        initial_flat_params,
-        initial_sigma,
-        options=options
-    )
+    os.makedirs(log_dir, exist_ok=True)
+
+    es = cma.CMAEvolutionStrategy(initial_flat_params, initial_sigma, inopts=options)
+    
+    while not es.stop():
+        solutions = es.ask()
+        costs = [replay_error(x) for x in solutions]
+        es.tell(solutions, costs)
+        es.disp()
+        
+        # Periodic logging of the best parameters
+        np.save(f"{log_dir}/best_params.npy", es.result.xbest)
 
     # --- 6. Access the results ---
-    best_flat_params = es[0]  # Best solution found
-    best_cost = es[1]  # Cost value of the best solution
-    num_evaluations = es[2]  # Number of function evaluations
-    num_iterations = es[3]  # Number of iterations
-    mean_params_flat = es[5]  # Mean of the population (often a good solution)
+    best_flat_params = es.result.xbest  # Best solution found
+    best_cost = es.result.fbest  # Cost value of the best solution
+    num_evaluations = es.result.evals  # Number of function evaluations
+    num_iterations = es.result.iterations  # Number of iterations
+    mean_params_flat = es.result.xmean  # Mean of the population
 
     print(options)
 

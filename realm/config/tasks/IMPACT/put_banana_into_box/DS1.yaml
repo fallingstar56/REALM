@@ -48,14 +48,14 @@ distractors:
       position: [ 0.1, -0.1, 0.771 ] #[-0.015, 0, 0.77]
       orientation: [ -0.7071068, 0, 0, 0.7071068 ]
       bounding_box: [ 0.15, 0.03, 0.09 ]
-    - type: "DatasetObject"
-      name: "napkin"
-      category: "dinner_napkin"
-      model: "qmpgsg"
-      bounding_box: [ 0.21, 0.16, 0.01 ]
-      prim_type: 1
-      abilities: { "cloth": { } }
-      position: [ 0.15, 0.15, 0.78 ]
+#    - type: "DatasetObject" # TODO: uncomment this and flag GPU dynamics enable/disable to allow cloth in scenes
+#      name: "napkin"
+#      category: "dinner_napkin"
+#      model: "qmpgsg"
+#      bounding_box: [ 0.21, 0.16, 0.01 ]
+#      prim_type: 1
+#      abilities: { "cloth": { } }
+#      position: [ 0.15, 0.15, 0.78 ]
     - type: "PrimitiveObject"
       name: "cube"
       primitive_type: "Cube"

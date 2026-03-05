@@ -16,6 +16,10 @@ from realm.utils import cost_function, set_flat_physics_params
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="UR5 dynamic sim physics optimization")
     parser.add_argument('--max_eps', type=int, required=False, default=3)
+    parser.add_argument('--seed', type=int, required=False, default=42)
+    parser.add_argument('--initial_sigma', type=float, required=False, default=0.5)
+    parser.add_argument('--popsize', type=int, required=False, default=11)
+    parser.add_argument('--max_evals', type=int, required=False, default=55)
     args = parser.parse_args()
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -42,14 +46,14 @@ if __name__ == "__main__":
     armature = np.array([0.1] * dof)
     initial_flat_params = np.concatenate((friction, armature))
 
-    initial_sigma = 0.5
+    initial_sigma = args.initial_sigma
 
     options = {
-        'seed': 42,
-        'maxfevals': 55,
-        'popsize': 11,
-        'tolfun': 0.1,
-        'tolx': 1e-3,
+        'seed': args.seed,
+        'maxfevals': args.max_evals,
+        'popsize': args.popsize,
+        'tolfun': 1e-3,
+        'tolx': 1e-4,
         'verb_disp': 1,
         'verbose': -9,
         'bounds': [0, 2]
@@ -62,17 +66,23 @@ if __name__ == "__main__":
         # Evaluate cost using replayed trajectories
         return cost_function(env=env, traj_path=traj_path, max_eps=args.max_eps, dof=dof)
 
+    os.makedirs(log_dir, exist_ok=True)
+
     print(f"Starting CMA-ES optimization for {robot} (DOF={dof})...")
-    es = cma.fmin(
-        objective,
-        initial_flat_params,
-        initial_sigma,
-        options=options
-    )
+    es = cma.CMAEvolutionStrategy(initial_flat_params, initial_sigma, inopts=options)
+    
+    while not es.stop():
+        solutions = es.ask()
+        costs = [objective(x) for x in solutions]
+        es.tell(solutions, costs)
+        es.disp()
+        
+        # Periodic logging of the best parameters
+        np.save(f"{log_dir}/best_params.npy", es.result.xbest)
 
     # --- Results ---
-    best_flat_params = es[0]
-    best_cost = es[1]
+    best_flat_params = es.result.xbest
+    best_cost = es.result.fbest
     
     print("\n--- Optimization Results ---")
     print(f"Best cost found: {best_cost}")
