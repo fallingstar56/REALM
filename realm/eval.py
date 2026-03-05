@@ -302,7 +302,7 @@ def evaluate(
             "task": task,
             "perturbation": perturbations[0],
             "instruction": env.instruction,
-            "model": model,
+            "model": model_type,
             "real2sim": "Simulated",
             "env": "REALM",
             "task_progression": task_progression,
