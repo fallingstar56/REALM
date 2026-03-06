@@ -4,6 +4,7 @@ import os
 import glob
 import h5py
 import random
+import pickle
 import numpy as np
 import torch
 from datetime import datetime
@@ -28,14 +29,16 @@ def get_joint_data(f, root_key, arm_priority=['arm_left_position_align']):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="dynamic sim evals")
     parser.add_argument('--max_eps', type=int, required=False, default=5)
+    parser.add_argument('--robot', type=str, required=False, default="UR5", help='Robot type')
     args = parser.parse_args()
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = f"/app/logs/replay_trajectory/{run_id}"
+    os.makedirs(log_dir, exist_ok=True)
     task_cfg_path = f"IMPACT/trajectory_replay/default.yaml"
     traj_root = "/app/data/RoboMIND2.0-UR5/data/ur/"
     rendering_mode = "r"
-    robot = "UR5"
+    robot = args.robot #"UR5"
     #robot = "UR5_default_pd_control"
 
     ep_paths = sorted(glob.glob(os.path.join(traj_root, "**/trajectory.hdf5"), recursive=True))
@@ -76,7 +79,13 @@ if __name__ == "__main__":
                 traj_ee_gt = None # Cartesian GT is optional in replay_traj
 
             res_dict = replay_traj(env, traj_qpos_actions, traj_qpos_gt, traj_ee_gt, dof=6)
-            plot_err(res_dict, ep_names[i], log_dir=log_dir, plot_title=robot)
+            
+            # Save res_dict to log_dir
+            err_dict_path = os.path.join(log_dir, f"err_dict_{ep_names[i]}.pkl")
+            with open(err_dict_path, 'wb') as f:
+                pickle.dump(res_dict, f)
+            print(f"Saved error dictionary for {ep_names[i]} to {err_dict_path}")
+            #plot_err(res_dict, ep_names[i], log_dir=log_dir, plot_title=robot)
             
         except Exception as e:
             print(f"Error processing {ep_names[i]}: {e}")

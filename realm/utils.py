@@ -58,6 +58,7 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
 
     qpos = []
     ee_pos_list = []
+    ee_rot_list = []
 
     obs, _ = env.reset()
     obs, rew, terminated, truncated, info = env.warmup(obs)
@@ -73,6 +74,7 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
 
         ee_pos, ee_rot = env.get_ee_pose()
         ee_pos_list.append(ee_pos)
+        ee_rot_list.append(ee_rot)
 
         action = np.concatenate((trajectory_actions[t, :dof], np.atleast_1d(np.zeros(1))))
         obs, curr_task_progression, terminated, truncated, info = env.step(action)
@@ -80,6 +82,7 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
     # Stack trajectories
     qpos_joints = np.stack(qpos)
     ee_pos_arr = np.stack(ee_pos_list)
+    ee_rot_arr = np.stack(ee_rot_list)
 
     # Calculate errors
     # Note: ensure GT matches the length of replayed steps
@@ -91,7 +94,10 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
 
     return {
         "qpos_err": qpos_err,
-        "ee_pos_err": ee_pos_err
+        "ee_pos_err": ee_pos_err,
+        "qpos_joints": qpos_joints,
+        "ee_pos": ee_pos_arr,
+        "ee_rot": ee_rot_arr
     }
 
 
