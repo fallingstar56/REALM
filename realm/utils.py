@@ -97,7 +97,9 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
         "ee_pos_err": ee_pos_err,
         "qpos_joints": qpos_joints,
         "ee_pos": ee_pos_arr,
-        "ee_rot": ee_rot_arr
+        "ee_rot": ee_rot_arr,
+        "trajectory_gt_qpos": trajectory_actions,
+        "trajectory_gt_ee": trajectory_gt_ee,
     }
 
 

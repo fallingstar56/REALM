@@ -81,10 +81,10 @@ if __name__ == "__main__":
             res_dict = replay_traj(env, traj_qpos_actions, traj_qpos_gt, traj_ee_gt, dof=6)
             
             # Save res_dict to log_dir
-            err_dict_path = os.path.join(log_dir, f"err_dict_{ep_names[i]}.pkl")
+            err_dict_path = os.path.join(log_dir, f"err_dict_{args.robot}_{ep_names[i]}.pkl")
             with open(err_dict_path, 'wb') as f:
                 pickle.dump(res_dict, f)
-            print(f"Saved error dictionary for {ep_names[i]} to {err_dict_path}")
+            print(f"Saved error dictionary for {ep_names[i]} with robot {args.robot} to {err_dict_path}")
             #plot_err(res_dict, ep_names[i], log_dir=log_dir, plot_title=robot)
             
         except Exception as e:
