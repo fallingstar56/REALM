@@ -53,7 +53,7 @@ class EntityPrim(XFormPrim):
         name,
         load_config=None,
     ):
-        # Other values that will be filled in at runtime
+        # other values that will be filled in at runtime
         self._root_link_name = None  # Name of the root link
         self._n_dof = None
         self._links = None

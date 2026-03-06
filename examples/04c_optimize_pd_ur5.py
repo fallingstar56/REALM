@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = f"/app/logs/optimize_physics_ur5/{run_id}"
-    task_cfg_path = f"IMPACT/trajectory_replay/default.yaml"
+    task_cfg_path = f"other/trajectory_replay/default.yaml"
     rendering_mode = "r"
     traj_path = "/app/data/RoboMIND2.0-UR5/data/ur/"
     robot = "UR5"

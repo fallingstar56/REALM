@@ -22,7 +22,7 @@ if __name__ == "__main__":
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = f"/app/logs/replay_trajectory/{run_id}"
     os.makedirs(log_dir, exist_ok=True)
-    task_cfg_path = f"IMPACT/trajectory_replay/default.yaml"
+    task_cfg_path = f"other/trajectory_replay/default.yaml"
     traj_path = "/app/data/droid_1.0.1/extracted_eps/chunk-000/"
     rendering_mode = "r"
     robot = args.robot
