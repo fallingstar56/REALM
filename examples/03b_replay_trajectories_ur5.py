@@ -37,9 +37,8 @@ if __name__ == "__main__":
     os.makedirs(log_dir, exist_ok=True)
     task_cfg_path = f"other/trajectory_replay/default.yaml"
     traj_root = "/app/data/RoboMIND2.0-UR5/data/ur/"
-    rendering_mode = "pt" # TODO: undo
-    robot = args.robot #"UR5"
-    #robot = "UR5_default_pd_control"
+    rendering_mode = "r"
+    robot = args.robot
 
     ep_paths = sorted(glob.glob(os.path.join(traj_root, "**/trajectory.hdf5"), recursive=True))
     random.seed(42)
@@ -54,7 +53,7 @@ if __name__ == "__main__":
         perturbations=["Default"],
         rendering_mode=rendering_mode,
         robot=robot,
-        #no_rendering=True # TODO: undo
+        no_rendering=True
     )
 
     for i, full_path in enumerate(ep_paths):

@@ -66,7 +66,7 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
 
     # Simple warmup: go to initial GT position
     for _ in range(150):
-        action = np.concatenate((trajectory_gt_qpos[0, :dof], np.atleast_1d(np.zeros(1))))
+        action = np.concatenate((trajectory_gt_qpos[0, :dof], np.atleast_1d(np.array([-1]))))
         obs, curr_task_progression, terminated, truncated, info = env.step(action)
 
     for t in range(max_steps):
@@ -81,7 +81,7 @@ def replay_traj(env: RealmEnvironmentDynamic, trajectory_actions, trajectory_gt_
         ee_pos_list.append(ee_pos)
         ee_rot_list.append(ee_rot)
 
-        action = np.concatenate((trajectory_actions[t, :dof], np.atleast_1d(np.zeros(1))))
+        action = np.concatenate((trajectory_actions[t, :dof], np.atleast_1d(np.array([-1]))))
         obs, curr_task_progression, terminated, truncated, info = env.step(action)
 
     # Save debug replay video:
