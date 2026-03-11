@@ -4,18 +4,21 @@ from openpi_client import websocket_client_policy, image_tools
 import omnigibson as og
 
 
-def extract_from_obs(obs: dict, robot_name='DROID'):
+def extract_from_obs(obs: dict, robot_name='DROID', enable_depth=False):
     base_im = obs['external']['external_sensor0']['rgb'].cpu().numpy()[..., :3]
+    base_depth = obs['external']['external_sensor0']['depth_linear'].cpu().numpy() if enable_depth else None
     if 'external_sensor1' in obs['external']:
         base_im_second = obs['external']['external_sensor1']['rgb'].cpu().numpy()[..., :3]
+        base_depth_second = obs['external']['external_sensor1']['depth_linear'].cpu().numpy() if enable_depth else None
     else:
         base_im_second = None
+        base_depth_second = None
 
     wrist_im = obs[robot_name]['DROID:gripper_link_camera:Camera:0']['rgb'].cpu().numpy()[..., :3]
     proprio = obs[robot_name]['proprio'].cpu().numpy()
     robot_state = proprio[:7]
     gripper_state = proprio[7] / 0.05  # 0 = open, 0.05 = closed
-    return base_im, base_im_second, wrist_im, robot_state, gripper_state
+    return base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state
 
 
 class InferenceClient:
@@ -52,6 +55,15 @@ class InferenceClient:
             pred_action_chunk = np.concatenate(
                 [pred["action.joint_position"],
                  pred["action.gripper_position"].reshape(-1, 1)], axis=-1)
+            return pred_action_chunk
+        elif self.model_type == "molmoact":
+            img_to_use = base_im_second if use_base_im_second else base_im
+            obs_dict = {
+                "images": [img_to_use, wrist_im],
+                "instruction": instruction,
+            }
+            pred = self.client.infer(obs_dict)
+            pred_action_chunk = pred["action"]
             return pred_action_chunk
         else:
             img_to_use = base_im_second if use_base_im_second else base_im

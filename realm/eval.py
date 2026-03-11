@@ -86,6 +86,7 @@ def evaluate(
         log_dir="/app/logs",
         resume=False,
         multi_view=False,
+        no_record=False,
         no_render=False,
         rendering_mode=None,
         task_cfg_path=None,
@@ -154,8 +155,8 @@ def evaluate(
         if run_id < start_repeat:
             continue
 
-        # timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
-        # video_recorder = VideoRecorder(log_dir, timestamp, run_id, task, perturbations[0])
+        timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
+        video_recorder = VideoRecorder(log_dir, timestamp, run_id, task, perturbations[0])
 
         qpos = []
         actions = []
@@ -179,7 +180,7 @@ def evaluate(
         was_grasping = False
 
         while t < max_steps and terminal_steps > 0:
-            base_im, base_im_second, wrist_im, robot_state, gripper_state = extract_from_obs(obs, robot_name=env.robot.name)
+            base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state = extract_from_obs(obs, robot_name=env.robot.name)
 
             # Metrics collection
             ee_pos, ee_rot = env.get_ee_pose()
@@ -223,19 +224,20 @@ def evaluate(
                 else:
                     action_buffer.put(pred_action_chunk)
 
-            # if not no_render:
-            #     video_recorder.add_frame(base_im, wrist_im, base_im_second)
+            if not no_record:
+                video_recorder.add_frame(base_im, wrist_im, base_im_second)
 
             qpos.append(np.concatenate((robot_state, np.atleast_1d(np.array(gripper_state)))))
 
             action = action_buffer.get()
             actions.append(action)
 
-            new_joint_action = action.copy()[:7]
+            new_action = action.copy()
+            new_action[-1] = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
 
-            new_gripper_state = 1 if action[7] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
-            new_gripper_state = np.atleast_1d(np.array(new_gripper_state))
-            new_action = np.concatenate((new_joint_action, new_gripper_state))
+            # new_gripper_state = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
+            # new_gripper_state = np.atleast_1d(np.array(new_gripper_state))
+            # new_action = np.concatenate((new_action, new_gripper_state))
 
             obs, curr_task_progression, terminated, truncated, info = env.step(new_action)
 
@@ -319,10 +321,10 @@ def evaluate(
             "object_drops": drops
         })
 
-        # if not no_render:
-        #    video_filename = os.path.join(log_dir, "videos", f"{task}_{perturbations[0]}_{run_id}")
-        #    video_recorder.save_video(video_filename)
-        # video_recorder.cleanup()
+        if not no_record:
+            video_filename = os.path.join(log_dir, "videos", f"{task}_{perturbations[0]}_{run_id}")
+            video_recorder.save_video(video_filename)
+            video_recorder.cleanup()
 
         qpos_filename = os.path.join(log_dir, "qpos", f"{task}_{perturbations[0]}_{run_id}")
         os.makedirs(log_dir + "/qpos", exist_ok=True)

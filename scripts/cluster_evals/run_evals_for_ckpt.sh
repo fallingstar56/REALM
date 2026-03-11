@@ -33,10 +33,12 @@ while [[ "$#" -gt 0 ]]; do
     --repeats) REPEATS="$2"; shift 2 ;;
     --experiment_name) EXPERIMENT_NAME="$2"; shift 2 ;;
     --task_ids) T_RAW="$2"; mapfile -t TASK_IDS < <(expand_ids "$2"); shift 2 ;;
+    --task_cfg_path) TASK_CFG_PATH="$2"; shift 2 ;;
     --perturbation_ids) P_RAW="$2"; mapfile -t PERT_IDS < <(expand_ids "$2"); shift 2 ;;
     --model_type) MODEL_TYPE="$2"; shift 2 ;;
     --debug) DEBUG=true; shift 1;; 
     --multi-view) MULTI_VIEW_FLAG="--multi-view"; shift 1;; 
+    --no_render) NO_RENDER_FLAG="--no_render"; shift 1;;
     --run-id) RUN_ID="$2"; shift 2 ;; 
     --resume) RESUME=true; RESUME_FLAG="--resume"; shift 1;; 
     --rendering_mode) RENDERING_MODE="$2"; shift 2 ;;
@@ -105,7 +107,7 @@ fi
 # Determine MODEL_NAME for path construction
 if [ "$DEBUG" = "true" ]; then
   MODEL_NAME="debug"
-elif [ "$MODEL" = "molmoact" ]; then
+elif [ "$MODEL_TYPE" = "molmoact" ]; then
   MODEL_NAME="molmoact"
 else
   CLEAN_PATH="${CHECKPOINT_PATH%/}"
@@ -133,8 +135,15 @@ for i in "${TASK_IDS[@]}"; do
         fi
     fi
 
+    if [ -n "$TASK_CFG_PATH" ]; then
+      TASK_CFG_ARG="--task_cfg_path $TASK_CFG_PATH"
+    else
+      TASK_CFG_ARG=""
+    fi
+
     sbatch scripts/cluster_evals/run_single_eval.sh \
       --task_id "$i" \
+      $TASK_CFG_ARG \
       --perturbation_id "$j" \
       --repeats "$REPEATS" \
       --max_steps "$MAX_STEPS" \
@@ -149,6 +158,7 @@ for i in "${TASK_IDS[@]}"; do
       $DEBUG_FLAG \
       $MULTI_VIEW_FLAG \
       $RESUME_FLAG \
+      $NO_RENDER_FLAG \
       $ROBOT_FLAG
   done
 done

@@ -6,6 +6,7 @@ from realm.helpers import compute_rot_diff_magnitude
 from realm.robots.droid_joint_controller import IndividualJointPDController as DROIDJointPDController
 from realm.robots.droid_gripper_controller import MultiFingerGripperController as DROIDGripperController
 from realm.robots.custom_joint_controller import IndividualJointPDController
+from realm.robots.droid_ee_controller import DroidEndEffectorController
 import omnigibson as og
 from omnigibson.object_states.contact_bodies import ContactBodies
 from omnigibson.controllers import REGISTERED_CONTROLLERS
@@ -17,6 +18,7 @@ from omnigibson.objects.dataset_object import DatasetObject
 
 
 REGISTERED_CONTROLLERS["IndividualJointPDController"] = IndividualJointPDController
+REGISTERED_CONTROLLERS["DroidEndEffectorController"] = DroidEndEffectorController
 REGISTERED_CONTROLLERS["CustomJointController"] = DROIDJointPDController
 REGISTERED_CONTROLLERS["CustomGripperController"] = DROIDGripperController
 INIT_OPENNESS_FRACTION = 1.0 #0.5

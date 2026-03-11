@@ -20,6 +20,7 @@ if __name__ == "__main__":
     parser.add_argument('--rendering_mode', type=str, required=False, default=None, help='Omnigibson rendering mode (pt, rt, r)')
     parser.add_argument('--multi-view', action='store_true', help='Enable second external camera')
     parser.add_argument('--resume', action='store_true', help='Resume from existing run report if found')
+    parser.add_argument('--no_record', action='store_true', help='Do not record videos from runs.')
     parser.add_argument('--no_render', action='store_true', help='Disable rendering completely')
     parser.add_argument('--robot', type=str, required=False, default="DROID", help='Robot type')
     args = parser.parse_args()
@@ -44,6 +45,7 @@ if __name__ == "__main__":
         log_dir=log_dir,
         multi_view=args.multi_view,
         resume=args.resume,
+        no_record=args.no_record,
         no_render=args.no_render,
         rendering_mode=args.rendering_mode,
         task_cfg_path=args.task_cfg_path,

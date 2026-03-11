@@ -52,10 +52,15 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
             use_delta_commands=False,  # Delta commands are less common for torque control
             compute_delta_in_quat_space=None,  # Delta commands are less common for torque control
             mode="pose_delta_ori",
-            workspace_pose_limiter=None
+            workspace_pose_limiter=None,
+            max_effort=None,
+            min_effort=None
     ):
         self._motor_type = motor_type.lower()
         self._use_impedances = True
+
+        self.max_effort = None if max_effort is None else th.tensor(max_effort).to(og.sim.device)
+        self.min_effort = None if min_effort is None else th.tensor(min_effort).to(og.sim.device)
 
         self._use_gravity_compensation = use_gravity_compensation
         self._use_cc_compensation = use_cc_compensation
@@ -227,6 +232,10 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
         # # Add Coriolis / centrifugal compensation
         if self._use_cc_compensation:
             u += control_dict["cc_force"][self.dof_idx].to(og.sim.device)
+
+        if self.min_effort is not None and self.max_effort is not None:
+            assert u.shape == self.max_effort.shape == self.min_effort.shape
+            u = u.clip(self.min_effort, self.max_effort)
 
         return u
 

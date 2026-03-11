@@ -58,7 +58,7 @@ export XLA_PYTHON_CLIENT_MEM_FRACTION=0.25
 port=$((BASE_PORT + PERTURBATION_ID + 100 * TASK_ID))
 
 if [ "$DEBUG" = "false" ]; then
-  if [ "$MODEL" = "openpi" ]; then
+  if [ "$MODEL_TYPE" = "openpi" ]; then
     POLICY_SIF="/scratch/project/open-34-32/sedlam/projects/REALM_openpi/uv_cuda128.sif"
     cd "$POLICY_RUN_DIR" || exit
     apptainer exec \
@@ -76,7 +76,7 @@ if [ "$DEBUG" = "false" ]; then
         --policy.config=$POLICY_CONFIG \
         --policy.dir=/checkpoint & SERVER_PID=$!
     sleep 120
-  elif [ "$MODEL" = "molmoact" ]; then
+  elif [ "$MODEL_TYPE" = "molmoact" ]; then
     POLICY_SIF="/scratch/project/open-34-32/sedlam/projects/molmoact/apptainer/molmoact.sif"
     cd "$POLICY_RUN_DIR" || exit
     apptainer exec \
@@ -87,7 +87,7 @@ if [ "$DEBUG" = "false" ]; then
       --bind $CHECKPOINT_PATH:/checkpoint \
       $POLICY_SIF /bin/bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate && pip install tyro && pip install /app/packages/openpi-client && python /app/inference/run_molmoact_server.py --port=${port}"
     sleep 120
-  elif [ "$MODEL" == "GR00T" ]; then
+  elif [ "$MODEL_TYPE" == "GR00T" ]; then
     cd "$POLICY_RUN_DIR" || exit
     uv run scripts/serve_gr00t.py \
       --port=$port \
@@ -106,7 +106,7 @@ mkdir -p "$REALM_ROOT/pip_cache/$SLURM_JOB_ID"
 
 if [ "$DEBUG" = "true" ]; then
   MODEL_NAME="debug"
-elif [ "$MODEL" = "molmoact" ]; then
+elif [ "$MODEL_TYPE" = "molmoact" ]; then
   MODEL_NAME="molmoact"
 else
   CLEAN_PATH="${CHECKPOINT_PATH%/}"

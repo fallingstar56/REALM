@@ -87,6 +87,10 @@ MODEL="pi0"
 CKPT_PATH=""             # required
 EVAL_ENV="singularity"
 MULTI_VIEW=false
+NO_RENDER=false
+ROBOT=""
+TASK_CFG_PATH=""
+RENDERING_MODE="rt"
 
 # --------------------------------------------------------------------------------------
 # Parse flag arguments
@@ -96,6 +100,34 @@ while [[ $# -gt 0 ]]; do
         --multi-view)
             MULTI_VIEW=true
             shift
+            ;;
+        --no-render)
+            NO_RENDER=true
+            shift
+            ;;
+        --robot)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --robot requires a value" >&2
+                exit 1
+            fi
+            ROBOT="$2"
+            shift 2
+            ;;
+        --task-cfg-path)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --task-cfg-path requires a value" >&2
+                exit 1
+            fi
+            TASK_CFG_PATH="$2"
+            shift 2
+            ;;
+        --rendering-mode)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --rendering-mode requires a value" >&2
+                exit 1
+            fi
+            RENDERING_MODE="$2"
+            shift 2
             ;;
         -p|--perturbation-id)
             if [[ $# -lt 2 ]]; then
@@ -603,6 +635,26 @@ else
     MULTI_VIEW_FLAG="--multi-view false"
 fi
 
+NO_RENDER_FLAG=""
+if [ "$NO_RENDER" = true ]; then
+    NO_RENDER_FLAG="--no_render"
+fi
+
+ROBOT_FLAG=""
+if [ -n "$ROBOT" ]; then
+    ROBOT_FLAG="--robot $ROBOT"
+fi
+
+TASK_CFG_ARG=""
+if [ -n "$TASK_CFG_PATH" ]; then
+    TASK_CFG_ARG="--task_cfg_path $TASK_CFG_PATH"
+fi
+
+RENDERING_MODE_FLAG=""
+if [ -n "$RENDERING_MODE" ]; then
+    RENDERING_MODE_FLAG="--rendering_mode $RENDERING_MODE"
+fi
+
 case "$EVAL_ENV" in
     singularity)
         if [[ -z "${REALM_SIF:-}" ]]; then
@@ -641,7 +693,11 @@ case "$EVAL_ENV" in
                 --max_steps $MAX_STEPS \
                 --model $MODEL \
                 --port $PORT \
-                $MULTI_VIEW_FLAG
+                $MULTI_VIEW_FLAG \
+                $NO_RENDER_FLAG \
+                $ROBOT_FLAG \
+                $TASK_CFG_ARG \
+                $RENDERING_MODE_FLAG
         ;;
     docker)
         docker run \
@@ -668,7 +724,11 @@ case "$EVAL_ENV" in
                 --max_steps $MAX_STEPS \
                 --model $MODEL \
                 --port $PORT \
-                $MULTI_VIEW_FLAG
+                $MULTI_VIEW_FLAG \
+                $NO_RENDER_FLAG \
+                $ROBOT_FLAG \
+                $TASK_CFG_ARG \
+                $RENDERING_MODE_FLAG
         ;;
     current)
         micromamba run -n omnigibson python -u realm/eval.py \
@@ -678,7 +738,11 @@ case "$EVAL_ENV" in
             --max_steps $MAX_STEPS \
             --model $MODEL \
             --port $PORT \
-            $MULTI_VIEW_FLAG
+            $MULTI_VIEW_FLAG \
+            $NO_RENDER_FLAG \
+            $ROBOT_FLAG \
+            $TASK_CFG_ARG \
+            $RENDERING_MODE_FLAG
         ;;
 esac
 
