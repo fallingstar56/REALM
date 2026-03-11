@@ -252,9 +252,19 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
         return control_copy
 
     def compute_no_op_goal(self, control_dict):
+        pos_relative = control_dict[f"{self.task_name}_pos_relative"]
+        quat_relative = control_dict[f"{self.task_name}_quat_relative"]
+        rpy_relative = th.from_numpy(R.from_quat(quat_relative.cpu().numpy()).as_euler('xyz')).to(pos_relative.device)
+
         return dict(
-            target_pos=control_dict[f"{self.task_name}_pos_relative"],
-            target_quat=control_dict[f"{self.task_name}_quat_relative"],
+            target_pos=pos_relative,
+            target_quat=quat_relative,
+            target_rpy=rpy_relative,
+            target_pos_relative=th.zeros(3, dtype=th.float32, device=pos_relative.device),
+            target_quat_relative=quat_relative,
+            target_rpy_relative=th.zeros(3, dtype=th.float32, device=pos_relative.device),
+            target_cartesian_pos_vel=th.zeros(3, dtype=th.float32, device=pos_relative.device),
+            target_cartesian_rot_vel=th.zeros(3, dtype=th.float32, device=pos_relative.device),
         )
 
     def _compute_no_op_action(self, control_dict):
@@ -283,6 +293,12 @@ class DroidEndEffectorController(LocomotionController, ManipulationController, G
         return dict(
             target_pos=(3,),
             target_quat=(4,),
+            target_rpy=(3,),
+            target_pos_relative=(3,),
+            target_quat_relative=(4,),
+            target_rpy_relative=(3,),
+            target_cartesian_pos_vel=(3,),
+            target_cartesian_rot_vel=(3,),
         )
 
     def _to_tensor(self, input):
