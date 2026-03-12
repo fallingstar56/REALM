@@ -2,6 +2,7 @@ import numpy as np
 from PIL import Image
 from openpi_client import websocket_client_policy, image_tools
 import omnigibson as og
+from realm.helpers import axisangle_to_rpy
 
 
 def extract_from_obs(obs: dict, robot_name='DROID', enable_depth=False):
@@ -33,11 +34,16 @@ class InferenceClient:
             )
              og.log.info("Connected!")
 
-    def infer(self, instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state, use_base_im_second=False):
+    def infer(self, instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state, use_base_im_second=False, ee_control=False):
         if self.model_type == "debug":
-            pred_action_chunk = np.atleast_1d(np.zeros(8))
+            if ee_control:
+                pred_action_chunk = np.array([0.41402626, -0.13211727, 0.57253086, -3.09742367, 0.2580259, -0.24700592, -1])
+            else:
+                pred_action_chunk = np.atleast_1d(np.zeros(8))
+
             return pred_action_chunk
 
+        # TODO: all DROID EE control poses need to have flip_pose_pointing_down() applied before being passed to the step
         if self.model_type == "GR00T":
             base_im_resized = np.asarray(Image.fromarray(base_im).resize((320, 180))).astype(np.uint8)
             base_im_second_resized = np.asarray(Image.fromarray(base_im_second).resize((320, 180))).astype(np.uint8)
@@ -64,6 +70,10 @@ class InferenceClient:
             }
             pred = self.client.infer(obs_dict)
             pred_action_chunk = pred["action"]
+
+            if ee_control:
+                pred_action_chunk = axisangle_to_rpy(pred_action_chunk)
+
             return pred_action_chunk
         else:
             img_to_use = base_im_second if use_base_im_second else base_im

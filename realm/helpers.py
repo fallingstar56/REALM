@@ -355,6 +355,45 @@ def add_poses(delta, source, degrees=False):
     return result
 
 
+def robot_to_world(action, robot_pos, robot_yaw, base_height=0.0):
+    """Convert a 7D EE action (xyz + RPY + gripper) from robot-local to world frame."""
+    assert action.shape[-1] == 7
+    action = action.copy()
+    cos_y, sin_y = np.cos(robot_yaw), np.sin(robot_yaw)
+    x_rel, y_rel = action[0], action[1]
+    action[0] = cos_y * x_rel - sin_y * y_rel + robot_pos[0]
+    action[1] = sin_y * x_rel + cos_y * y_rel + robot_pos[1]
+    action[2] = action[2] + robot_pos[2] + base_height
+    R_base = Rotation.from_euler('z', robot_yaw)
+    R_pred = Rotation.from_euler('xyz', action[3:6])
+    action[3:6] = (R_base * R_pred).as_euler('xyz')
+    return action
+
+
+def world_to_robot(action, robot_pos, robot_yaw, base_height=0.0):
+    """Convert a 7D EE action (xyz + RPY + gripper) from world frame to robot-local frame."""
+    action = action.copy()
+    cos_y, sin_y = np.cos(robot_yaw), np.sin(robot_yaw)
+    dx = action[0] - robot_pos[0]
+    dy = action[1] - robot_pos[1]
+    action[0] = cos_y * dx + sin_y * dy
+    action[1] = -sin_y * dx + cos_y * dy
+    action[2] = action[2] - robot_pos[2] - base_height
+    R_base_inv = Rotation.from_euler('z', robot_yaw).inv()
+    R_world = Rotation.from_euler('xyz', action[3:6])
+    action[3:6] = (R_base_inv * R_world).as_euler('xyz')
+    return action
+
+
+def axisangle_to_rpy(action):
+    """Convert rotation in an EE action from axis-angle to RPY (euler xyz).
+    Works for a single action (..., 7) or a chunk (..., T, 7).
+    """
+    action = action.copy()
+    action[..., 3:6] = Rotation.from_rotvec(action[..., 3:6]).as_euler('xyz')
+    return action
+
+
 def flip_pose_pointing_down(rpy_vec):
     r_old = Rotation.from_euler('xyz', rpy_vec)
     flip = Rotation.from_euler('xyz', [torch.pi, 0, 0])

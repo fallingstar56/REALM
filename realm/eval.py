@@ -213,16 +213,18 @@ def evaluate(
             if action_buffer.empty():
                 pred_action_chunk = client.infer(
                     env.instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
-                    use_base_im_second=(env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False)
+                    use_base_im_second=(env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False),
+                    ee_control=env.ee_control
                 )
 
                 if len(pred_action_chunk.shape) == 2:
-                    assert pred_action_chunk.shape[-1] == 8
                     for action in pred_action_chunk[:horizon]:
                         action = np.squeeze(action)
                         action_buffer.put(action)
-                else:
+                elif len(pred_action_chunk.shape) < 2:
                     action_buffer.put(pred_action_chunk)
+                else:
+                    assert len(pred_action_chunk.shape) <= 2, f"Unsupported number of dimensions in action chunk with shape: {pred_action_chunk.shape}. The chunk is expected to be 2D."
 
             if not no_record:
                 video_recorder.add_frame(base_im, wrist_im, base_im_second)

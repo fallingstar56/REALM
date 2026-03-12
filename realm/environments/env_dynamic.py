@@ -17,7 +17,9 @@ from realm.helpers import (
     get_non_droid_categories,
     get_droid_categories_by_theme,
     get_objects_by_names,
-    get_default_objects_cfg
+    get_default_objects_cfg,
+    robot_to_world,
+    world_to_robot,
 )
 
 import omnigibson as og
@@ -962,21 +964,22 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
 
             obs, rew, terminated, truncated, info = self.step(new_action)
 
-            # Sanity check: FK on current joint angles should match the robot-relative EE pose.
-            q_current = obs[self.robot.name]['proprio'].cpu().numpy()[:7]
-            fk_pos, fk_quat = _panda_fk(q_current)
-            pos_err = np.linalg.norm(fk_pos - ee_cmd[:3])
-            rot_err_rad = np.linalg.norm(
-                (R.from_quat(fk_quat) * R.from_euler('xyz', ee_cmd[3:6]).inv()).as_rotvec()
-            )
-            assert pos_err < 0.10, (
-                f"Warmup EE cmd position inconsistent with URDF FK: {pos_err:.4f}m error. "
-                f"sim={ee_cmd[:3]}, fk={fk_pos}"
-            )
-            assert np.degrees(rot_err_rad) < 20.0, (
-                f"Warmup EE cmd orientation inconsistent with URDF FK: {np.degrees(rot_err_rad):.1f}deg error. "
-                f"sim_euler={ee_cmd[3:6]}, fk_quat={fk_quat}"
-            )
+            if self.ee_control:
+                # Sanity check: FK on current joint angles should match the robot-relative EE pose.
+                q_current = obs[self.robot.name]['proprio'].cpu().numpy()[:7]
+                fk_pos, fk_quat = _panda_fk(q_current)
+                pos_err = np.linalg.norm(fk_pos - ee_cmd[:3])
+                rot_err_rad = np.linalg.norm(
+                    (R.from_quat(fk_quat) * R.from_euler('xyz', ee_cmd[3:6]).inv()).as_rotvec()
+                )
+                assert pos_err < 0.10, (
+                    f"Warmup EE cmd position inconsistent with URDF FK: {pos_err:.4f}m error. "
+                    f"sim={ee_cmd[:3]}, fk={fk_pos}"
+                )
+                assert np.degrees(rot_err_rad) < 20.0, (
+                    f"Warmup EE cmd orientation inconsistent with URDF FK: {np.degrees(rot_err_rad):.1f}deg error. "
+                    f"sim_euler={ee_cmd[3:6]}, fk_quat={fk_quat}"
+                )
         # for t in range(300):
         #     new_action = np.concatenate((
         #         np.zeros(7),
@@ -1007,47 +1010,17 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         return obs, _
 
     def _robot2world(self, action):
-        action = action.copy()
-        yaw = self.robot_rot_rad[2]
-
-        cos_y, sin_y = np.cos(yaw), np.sin(yaw)
-        x_rel, y_rel = action[0], action[1]
-        action[0] = cos_y * x_rel - sin_y * y_rel + self.robot_pos[0]
-        action[1] = sin_y * x_rel + cos_y * y_rel + self.robot_pos[1]
-
-        droid_base_height = DROID_BASE_HEIGHT if self.use_droid_with_base else 0.0
-        action[2] = action[2] + self.robot_pos[2] + droid_base_height
-
-        R_base = R.from_euler('z', yaw)
-        R_pred = R.from_euler('xyz', action[3:6])
-        action[3:6] = (R_base * R_pred).as_euler('xyz')
-
-        return action
+        base_height = DROID_BASE_HEIGHT if self.use_droid_with_base else 0.0
+        return robot_to_world(action, self.robot_pos, self.robot_rot_rad[2], base_height)
 
     def _world2robot(self, action):
-        """Convert a world-frame EE pose to robot-relative frame (inverse of _robot2world).
-        Input z is expected in raw world-frame (not yet adjusted for the controller's 0.87 offset).
-        """
-        action = action.copy()
-        yaw = self.robot_rot_rad[2]
-
-        dx = action[0] - self.robot_pos[0]
-        dy = action[1] - self.robot_pos[1]
-
-        cos_y, sin_y = np.cos(yaw), np.sin(yaw)
-        action[0] = cos_y * dx + sin_y * dy
-        action[1] = -sin_y * dx + cos_y * dy
-
-        droid_base_height = DROID_BASE_HEIGHT if self.use_droid_with_base else 0.0
-        action[2] = action[2] - self.robot_pos[2] - droid_base_height
-
-        R_base_inv = R.from_euler('z', yaw).inv()
-        R_world = R.from_euler('xyz', action[3:6])
-        action[3:6] = (R_base_inv * R_world).as_euler('xyz')
-
-        return action
+        base_height = DROID_BASE_HEIGHT if self.use_droid_with_base else 0.0
+        return world_to_robot(action, self.robot_pos, self.robot_rot_rad[2], base_height)
 
     def step(self, action):
+        if self.ee_control:
+            action = self._robot2world(action)
+
         obs, rew, terminated, truncated, info = self.omnigibson_env.step(action)
 
         task_progression = self.recompute_task_progression(obs)
