@@ -18,15 +18,8 @@ RUN micromamba install -n omnigibson -y -c conda-forge wandb moviepy && \
     cp /opt/modified_entity_prim.py /omnigibson-src/omnigibson/prims/entity_prim.py && \
     rm /opt/modified_entity_prim.py
 
-RUN micromamba run -n omnigibson pip install --default-timeout=1000 --retries 10 \
-    "lxml==4.9.4" \
-    "imageio==2.33.1" \
-    "imageio-ffmpeg==0.4.9" \
-    "triton==2.2.0" \
-    "usd-core==23.11"
-
 # 1. Install dm-control via conda-forge first
-RUN micromamba install -n omnigibson -y -c conda-forge dm-control
+RUN micromamba install -n omnigibson -y -c conda-forge dm-control==1.0.27=pyhd8ed1ab_0
 
 # 2. Install DeepMind robotics via pip
 RUN micromamba run -n omnigibson pip install --no-cache-dir \
@@ -39,11 +32,8 @@ RUN micromamba run -n omnigibson pip install --no-cache-dir \
     dm-robotics-moma \
     dm-robotics-manipulation
 
-RUN micromamba run -n omnigibson pip install numpy==1.26.0
-
-RUN micromamba run -n omnigibson pip install pandas==2.3.3
-
-RUN micromamba run -n omnigibson pip install pyarrow fastparquet
+RUN micromamba run -n omnigibson pip install pandas==2.3.3 pyarrow fastparquet
+RUN micromamba run -n omnigibson pip install numpy==1.26.0 #--upgrade --force-reinstall --no-build-isolation
 
 WORKDIR /omnigibson-src
 

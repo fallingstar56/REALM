@@ -19,7 +19,7 @@ From: stanfordvl/omnigibson:1.1.1
             "imageio-ffmpeg==0.4.9" \
             "triton==2.2.0" \
             "usd-core==23.11"
-        micromamba install -n omnigibson -y -c conda-forge dm-control --retry 5
+        micromamba install -n omnigibson -y -c conda-forge dm-control==1.0.27=pyhd8ed1ab_0
         micromamba run -n omnigibson pip install --no-cache-dir --default-timeout=100 \
             dm-robotics-controllers \
             dm-robotics-transformations \
@@ -28,11 +28,11 @@ From: stanfordvl/omnigibson:1.1.1
             dm-robotics-moma \
             dm-robotics-manipulation
         micromamba run -n omnigibson pip install --no-cache-dir \
-            "numpy==1.26.0"
-        micromamba run -n omnigibson pip install --no-cache-dir \
             "pandas==2.3.3" \
             pyarrow \
             fastparquet
+        micromamba run -n omnigibson pip install --no-cache-dir \
+            "numpy==1.26.0"
     '
     cp /opt/modified_entity_prim.py /omnigibson-src/omnigibson/prims/entity_prim.py
     rm /opt/modified_entity_prim.py
