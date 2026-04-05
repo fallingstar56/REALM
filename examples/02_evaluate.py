@@ -12,9 +12,9 @@ if __name__ == "__main__":
     parser.add_argument('--max_steps', type=int, required=False, default=500)
     parser.add_argument('--horizon', type=int, required=False, default=8)
     parser.add_argument('--task_cfg_path', type=str, required=False, default=None)
-    parser.add_argument('--model_name', type=str, required=True, default=None)
-    parser.add_argument('--model_type', type=str, required=True, default=None)
-    parser.add_argument('--port', type=int, required=True)
+    parser.add_argument('--model_name', type=str, required=False, default=None)
+    parser.add_argument('--model_type', type=str, required=False, default=None)
+    parser.add_argument('--port', type=int, required=False, default=8000)
     parser.add_argument('--host', type=str, required=False, default="127.0.0.1", help='Inference server host')
     parser.add_argument('--experiment_name', type=str, required=True)
     parser.add_argument('--run_id', type=str, required=False, default=None)
@@ -25,11 +25,18 @@ if __name__ == "__main__":
     parser.add_argument('--no_record', action='store_true', help='Do not record videos from runs.')
     parser.add_argument('--no_render', action='store_true', help='Disable rendering completely')
     parser.add_argument('--robot', type=str, required=False, default="DROID", help='Robot type')
+    parser.add_argument('--action_source', type=str, choices=["policy", "teleop"], default="policy", help='Action source for rollout control')
     args = parser.parse_args()
 
-    assert args.model_name is not None
-    assert args.model_type is not None
     assert args.experiment_name is not None
+    if args.action_source == "policy":
+        assert args.model_name is not None
+        assert args.model_type is not None
+    else:
+        if args.model_name is None:
+            args.model_name = "vr_teleop"
+        if args.model_type is None:
+            args.model_type = "teleop"
     #assert not (args.task_cfg_path and args.task_id), f"Either task --task_cfg_path or --task_id should be specified, but not both."
 
     log_dir = args.log_dir if args.log_dir is not None else "/app/logs"
@@ -53,7 +60,8 @@ if __name__ == "__main__":
         no_render=args.no_render,
         rendering_mode=args.rendering_mode,
         task_cfg_path=args.task_cfg_path,
-        robot=args.robot
+        robot=args.robot,
+        action_source=args.action_source,
     )
     og.shutdown()
     sys.exit(0)

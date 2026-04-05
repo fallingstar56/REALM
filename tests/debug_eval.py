@@ -12,6 +12,7 @@ if __name__ == "__main__":
         port=0,
         log_dir="/app/logs/debug",
         no_record=True,
+        action_source="policy",
     )
     og.shutdown()
     sys.exit(0)

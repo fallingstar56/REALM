@@ -49,6 +49,9 @@ SUPPORTED_PERTURBATIONS = [
     'VSB-NOBJ' # 15
 ]
 
+SUPPORTED_ACTION_SOURCES = ["policy", "teleop"]
+# policy: get actions from a model inference server
+# teleop: get actions from  OCulus VR controller teleoperation (currently only supports DROID EE controller config with cartesian velocity control)
 
 def set_sim_config(rendering_mode=None, robot="DROID"):
     if robot == "WidowX": # TODO: just read this from the yamls...
@@ -92,13 +95,19 @@ def evaluate(
         no_render=False,
         rendering_mode=None,
         task_cfg_path=None,
-        robot="DROID"
+        robot="DROID",
+        action_source="policy"
 ):
     start = time.perf_counter()
     og.log.info(f"DEBUG: Begin eval: {time.perf_counter() - start:.4f}s")
     if rendering_mode is None:
         rendering_mode = "rt"
     set_sim_config(rendering_mode=rendering_mode, robot=robot)
+
+    if action_source not in SUPPORTED_ACTION_SOURCES:
+        raise ValueError(
+            f"Unsupported action_source={action_source!r}. Expected one of {SUPPORTED_ACTION_SOURCES}."
+        )
 
     # -------------------- Create the environment + client --------------------
     if task_cfg_path is None:
@@ -114,11 +123,11 @@ def evaluate(
 
     os.makedirs(log_dir, exist_ok=True)
 
-    """
-    model_type = model_type # TODO: infer type from model name, rn this will just default to a pi model inference inside the client
-    client = InferenceClient(model_type, host=host, port=port)
-    og.log.info(f"DEBUG: Client connected: {time.perf_counter() - start:.4f}s")
-    """
+    client = None
+    if action_source == "policy":
+        model_type = model_type # TODO: infer type from model name, rn this will just default to a pi model inference inside the client
+        client = InferenceClient(model_type, host=host, port=port)
+        og.log.info(f"DEBUG: Client connected: {time.perf_counter() - start:.4f}s")
     
     env = RealmEnvironmentDynamic(
         config_path="/app/realm/config",
@@ -129,7 +138,8 @@ def evaluate(
         rendering_mode=rendering_mode,
         robot=robot
     )
-    if not env.ee_control:
+    
+    if action_source == "teleop" and not env.ee_control:
         raise ValueError(
             "VR teleop requires ee_control=true and DroidEndEffectorController. "
             "Please use DROID EE controller config."
@@ -189,8 +199,7 @@ def evaluate(
         drops = 0
         was_grasping = False
 
-        # Use the Oculus VR controller input
-        controller = VRPolicy()
+        controller = VRPolicy() if action_source == "teleop" else None
 
         while t < max_steps and terminal_steps > 0:
             # Extract the relevant information from the observation for the model
@@ -230,71 +239,65 @@ def evaluate(
                     drops += 1
             was_grasping = is_grasping
 
-            """
-            if action_buffer.empty():
-                # Compute robot-relative cartesian position for models that need it (e.g. DreamZero)
-                _ee_pos = ee_pos.cpu().numpy() if hasattr(ee_pos, 'cpu') else np.array(ee_pos)
-                _ee_rot = ee_rot.cpu().numpy() if hasattr(ee_rot, 'cpu') else np.array(ee_rot)
-                _ee_euler = Rot.from_quat(_ee_rot).as_euler('xyz')
-                _ee_pose_world = np.concatenate([_ee_pos, _ee_euler])
-                cartesian_position = env._world2robot(_ee_pose_world).astype(np.float32)
+            if action_source == "policy":
+                if action_buffer.empty():
+                    pred_action_chunk = client.infer(
+                        env.instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
+                        use_base_im_second=(env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False),
+                        ee_control=env.ee_control,
+                        cartesian_position=cartesian_position
+                    )
 
-                pred_action_chunk = client.infer(
-                    env.instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
-                    use_base_im_second=(env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False),
-                    ee_control=env.ee_control,
-                    cartesian_position=cartesian_position
-                )
+                    if len(pred_action_chunk.shape) == 2:
+                        for action in pred_action_chunk[:horizon]:
+                            action = np.squeeze(action)
+                            action_buffer.put(action)
+                    elif len(pred_action_chunk.shape) < 2:
+                        action_buffer.put(pred_action_chunk)
+                    else:
+                        assert len(pred_action_chunk.shape) <= 2, f"Unsupported number of dimensions in action chunk with shape: {pred_action_chunk.shape}. The chunk is expected to be 2D."
 
-                if len(pred_action_chunk.shape) == 2:
-                    for action in pred_action_chunk[:horizon]:
-                        action = np.squeeze(action)
-                        action_buffer.put(action)
-                elif len(pred_action_chunk.shape) < 2:
-                    action_buffer.put(pred_action_chunk)
-                else:
-                    assert len(pred_action_chunk.shape) <= 2, f"Unsupported number of dimensions in action chunk with shape: {pred_action_chunk.shape}. The chunk is expected to be 2D."
-            """
-            
-            state_dict = {
-                "cartesian_position": cartesian_position,
-                "gripper_position": gripper_state
-            }
-            
-            controller_info = controller.get_info()
-            has_pose = controller._state["poses"] != {}
-            
-            if ((not has_pose) or (not controller_info["controller_on"]) or (not controller_info["movement_enabled"])):
-                action = np.zeros(7, dtype=np.float32)
+                action = action_buffer.get()
             else:
-                action = controller._calculate_action(state_dict, False).astype(np.float32)
-                action = np.clip(action, -1.0, 1.0)
+                state_dict = {
+                    "cartesian_position": cartesian_position,
+                    "gripper_position": gripper_state
+                }
+
+                controller_info = controller.get_info()
+                has_pose = controller._state["poses"] != {}
+
+                if ((not has_pose) or (not controller_info["controller_on"]) or (not controller_info["movement_enabled"])):
+                    action = np.zeros(7, dtype=np.float32)
+                else:
+                    action = controller._calculate_action(state_dict, False).astype(np.float32)
+                    action = np.clip(action, -1.0, 1.0)
             
             if not no_record:
                 video_recorder.add_frame(base_im, wrist_im, base_im_second)
 
             qpos.append(np.concatenate((robot_state, np.atleast_1d(np.array(gripper_state)))))
+            # 8D action: 7 for joints, 1 for gripper
 
-            #action = action_buffer.get()
             # During each loop, we execute one action
             actions.append(action)
 
-            """
-            new_action = action.copy()
-            if model_type in ["debug", "openpi", "GR00T", "GR00T_N16", "dreamzero"]: # TODO: use a model config
-                new_action[-1] = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
-            elif model_type == "molmoact":
-                new_action[-1] = 1 if action[-1] < 0.5 else -1  # Prediction: (0,1) -> Target: (1,-1)
+            if action_source == "policy":
+                new_action = action.copy()
+                if model_type in ["debug", "openpi", "GR00T", "GR00T_N16", "dreamzero"]: # TODO: use a model config
+                    new_action[-1] = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
+                elif model_type == "molmoact":
+                    new_action[-1] = 1 if action[-1] < 0.5 else -1  # Prediction: (0,1) -> Target: (1,-1)
+                else:
+                    raise NotImplementedError()
+
+                # new_gripper_state = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
+                # new_gripper_state = np.atleast_1d(np.array(new_gripper_state))
+                # new_action = np.concatenate((new_action, new_gripper_state))
+
+                obs, curr_task_progression, terminated, truncated, info = env.step(new_action)
             else:
-                raise NotImplementedError()
-            """
-
-
-            # new_gripper_state = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
-            # new_gripper_state = np.atleast_1d(np.array(new_gripper_state))
-            # new_action = np.concatenate((new_action, new_gripper_state))
-
-            obs, curr_task_progression, terminated, truncated, info = env.step(action)
+                obs, curr_task_progression, terminated, truncated, info = env.step(action)
 
             if curr_task_progression > task_progression:
                 task_progression = curr_task_progression
@@ -359,6 +362,7 @@ def evaluate(
             "perturbation": perturbations[0],
             "instruction": env.instruction,
             "model": model_type,
+            "action_source": action_source,
             "real2sim": "Simulated",
             "env": "REALM",
             "task_progression": task_progression,
@@ -392,7 +396,8 @@ def evaluate(
         if not no_record:
             video_recorder.cleanup()
 
-        #client.reset()
+        if client is not None:
+            client.reset()
 
         results_filename = save_results(results, log_dir + "/reports", task, perturbations[0], filename=results_filename)
 

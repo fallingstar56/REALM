@@ -9,7 +9,8 @@ if __name__ == "__main__":
         repeats=1,
         max_steps=500,
         model_type="openpi",
-        port=8000
+        port=8000,
+        action_source="policy"
     )
     og.shutdown()
     sys.exit(0)
