@@ -176,235 +176,256 @@ def evaluate(
         if run_id < start_repeat:
             continue
 
-        timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
-        video_recorder = VideoRecorder(log_dir, timestamp, run_id, task, perturbations[0])
-
-        qpos = []
-        actions = []
-        action_buffer = Queue()
-
-        # -------------------- Rollout loop --------------------
-        obs, _ = env.reset()
-        obs, rew, terminated, truncated, info = env.warmup(obs)
-
-        t = 0
-        task_progression = 0.0
-        task_progression_timestamps = []
-        terminal_steps = 15
-        enforce_terminal_step_limit = action_source != "teleop"
-        enforce_max_steps_limit = action_source != "teleop"
-
-        ee_poses = []
-        collisions_self = 0
-        collisions_env = 0
-        is_self_col_active = False
-        is_env_col_active = False
-        drops = 0
-        was_grasping = False
-
         controller = None
+        last_reset_pressed = False
         if action_source == "teleop":
             controller = VRPolicy()
 
-        while (not enforce_max_steps_limit or t < max_steps) and (not enforce_terminal_step_limit or terminal_steps > 0):
-            # Extract the relevant information from the observation for the model
-            base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state = extract_from_obs(obs, robot_name=env.robot.name)
+        while True:
+            timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
+            video_recorder = VideoRecorder(log_dir, timestamp, run_id, task, perturbations[0])
+
+            qpos = []
+            actions = []
+            action_buffer = Queue()
+
+            # -------------------- Rollout loop --------------------
+            obs, _ = env.reset()
+            obs, rew, terminated, truncated, info = env.warmup(obs)
+
+            t = 0
+            task_progression = 0.0
+            task_progression_timestamps = []
+            terminal_steps = 15
+            enforce_terminal_step_limit = action_source != "teleop"
+            enforce_max_steps_limit = action_source != "teleop"
+
+            ee_poses = []
+            collisions_self = 0
+            collisions_env = 0
+            is_self_col_active = False
+            is_env_col_active = False
+            drops = 0
+            was_grasping = False
+            restart_requested = False
+
+            while (not enforce_max_steps_limit or t < max_steps) and (not enforce_terminal_step_limit or terminal_steps > 0):
+                # Extract the relevant information from the observation for the model
+                base_im, base_depth, base_im_second, base_depth_second, wrist_im, robot_state, gripper_state = extract_from_obs(obs, robot_name=env.robot.name)
             
-            # Metrics collection
-            ee_pos, ee_rot = env.get_ee_pose()
-            ee_poses.append(ee_pos)
-            _ee_pos = ee_pos.cpu().numpy() if hasattr(ee_pos, 'cpu') else np.array(ee_pos)
-            _ee_rot = ee_rot.cpu().numpy() if hasattr(ee_rot, 'cpu') else np.array(ee_rot)
-            _ee_euler = Rot.from_quat(_ee_rot).as_euler('xyz')
-            _ee_pos_world = np.concatenate([_ee_pos, _ee_euler])
-            cartesian_position = env._world2robot(_ee_pos_world).astype(np.float32)
+                # Metrics collection
+                ee_pos, ee_rot = env.get_ee_pose()
+                ee_poses.append(ee_pos)
+                _ee_pos = ee_pos.cpu().numpy() if hasattr(ee_pos, 'cpu') else np.array(ee_pos)
+                _ee_rot = ee_rot.cpu().numpy() if hasattr(ee_rot, 'cpu') else np.array(ee_rot)
+                _ee_euler = Rot.from_quat(_ee_rot).as_euler('xyz')
+                _ee_pos_world = np.concatenate([_ee_pos, _ee_euler])
+                cartesian_position = env._world2robot(_ee_pos_world).astype(np.float32)
 
-            # Check for collisions
-            is_self_col, is_env_col = env.check_collisions()
-            if is_self_col and not is_self_col_active:
-                collisions_self += 1
-            is_self_col_active = is_self_col
+                # Check for collisions
+                is_self_col, is_env_col = env.check_collisions()
+                if is_self_col and not is_self_col_active:
+                    collisions_self += 1
+                is_self_col_active = is_self_col
 
-            if is_env_col and not is_env_col_active:
-                collisions_env += 1
-            is_env_col_active = is_env_col
+                if is_env_col and not is_env_col_active:
+                    collisions_env += 1
+                is_env_col_active = is_env_col
 
-            is_grasping = env.check_grasp_condition(obs)
-            if was_grasping and not is_grasping:
-                is_placed = False
-                if hasattr(env, "task_type") and env.task_type in ["put", "stack"] and len(env.target_objects) > 0:
-                    mo = env.main_objects[0]
-                    target = env.target_objects[0]
-                    inside = mo.states[og.object_states.Inside].get_value(target)
-                    on_top = mo.states[og.object_states.OnTop].get_value(target)
-                    if inside or on_top:
-                        is_placed = True
+                is_grasping = env.check_grasp_condition(obs)
+                if was_grasping and not is_grasping:
+                    is_placed = False
+                    if hasattr(env, "task_type") and env.task_type in ["put", "stack"] and len(env.target_objects) > 0:
+                        mo = env.main_objects[0]
+                        target = env.target_objects[0]
+                        inside = mo.states[og.object_states.Inside].get_value(target)
+                        on_top = mo.states[og.object_states.OnTop].get_value(target)
+                        if inside or on_top:
+                            is_placed = True
 
-                if not is_placed:
-                    drops += 1
-            was_grasping = is_grasping
+                    if not is_placed:
+                        drops += 1
+                was_grasping = is_grasping
 
-            if action_source == "policy":
-                if action_buffer.empty():
-                    pred_action_chunk = client.infer(
-                        env.instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
-                        use_base_im_second=(env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False),
-                        ee_control=env.ee_control,
-                        cartesian_position=cartesian_position
-                    )
+                if action_source == "policy":
+                    if action_buffer.empty():
+                        pred_action_chunk = client.infer(
+                            env.instruction, base_im, base_im_second, wrist_im, robot_state, gripper_state,
+                            use_base_im_second=(env.task_type == "open_close_drawer" if hasattr(env, "task_type") else False),
+                            ee_control=env.ee_control,
+                            cartesian_position=cartesian_position
+                        )
 
-                    if len(pred_action_chunk.shape) == 2:
-                        for action in pred_action_chunk[:horizon]:
-                            action = np.squeeze(action)
-                            action_buffer.put(action)
-                    elif len(pred_action_chunk.shape) < 2:
-                        action_buffer.put(pred_action_chunk)
+                        if len(pred_action_chunk.shape) == 2:
+                            for action in pred_action_chunk[:horizon]:
+                                action = np.squeeze(action)
+                                action_buffer.put(action)
+                        elif len(pred_action_chunk.shape) < 2:
+                            action_buffer.put(pred_action_chunk)
+                        else:
+                            assert len(pred_action_chunk.shape) <= 2, f"Unsupported number of dimensions in action chunk with shape: {pred_action_chunk.shape}. The chunk is expected to be 2D."
+
+                    action = action_buffer.get()
+                else:
+                    state_dict = {
+                        "cartesian_position": cartesian_position,
+                        "gripper_position": gripper_state
+                    }
+
+                    controller_info = controller.get_info()
+                    reset_pressed = controller_info["success"]
+                    reset_triggered = reset_pressed and not last_reset_pressed
+                    last_reset_pressed = reset_pressed
+
+                    if reset_triggered:
+                        og.log.info("Teleop reset requested from BUTTON A. Restarting current rollout.")
+                        controller.reset_state()
+                        restart_requested = True
+                        break
+
+                    has_pose = controller._state["poses"] != {}
+
+                    if ((not has_pose) or (not controller_info["controller_on"]) or (not controller_info["movement_enabled"])):
+                        action = controller.get_idle_action()
                     else:
-                        assert len(pred_action_chunk.shape) <= 2, f"Unsupported number of dimensions in action chunk with shape: {pred_action_chunk.shape}. The chunk is expected to be 2D."
-
-                action = action_buffer.get()
-            else:
-                state_dict = {
-                    "cartesian_position": cartesian_position,
-                    "gripper_position": gripper_state
-                }
-
-                controller_info = controller.get_info()
-                has_pose = controller._state["poses"] != {}
-
-                if ((not has_pose) or (not controller_info["controller_on"]) or (not controller_info["movement_enabled"])):
-                    action = controller.get_idle_action()
-                else:
-                    action = controller._calculate_action(state_dict, False).astype(np.float32)
-                    action = np.clip(action, -1.0, 1.0)
+                        action = controller._calculate_action(state_dict, False).astype(np.float32)
+                        action = np.clip(action, -1.0, 1.0)
             
-            if not no_record:
-                video_recorder.add_frame(base_im, wrist_im, base_im_second)
+                if not no_record:
+                    video_recorder.add_frame(base_im, wrist_im, base_im_second)
 
-            qpos.append(np.concatenate((robot_state, np.atleast_1d(np.array(gripper_state)))))
-            # 8D action: 7 for joints, 1 for gripper
+                qpos.append(np.concatenate((robot_state, np.atleast_1d(np.array(gripper_state)))))
+                # 8D action: 7 for joints, 1 for gripper
 
-            # During each loop, we execute one action
-            actions.append(action)
+                # During each loop, we execute one action
+                actions.append(action)
 
-            if action_source == "policy":
-                new_action = action.copy()
-                if model_type in ["debug", "openpi", "GR00T", "GR00T_N16", "dreamzero"]: # TODO: use a model config
-                    new_action[-1] = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
-                elif model_type == "molmoact":
-                    new_action[-1] = 1 if action[-1] < 0.5 else -1  # Prediction: (0,1) -> Target: (1,-1)
+                if action_source == "policy":
+                    new_action = action.copy()
+                    if model_type in ["debug", "openpi", "GR00T", "GR00T_N16", "dreamzero"]: # TODO: use a model config
+                        new_action[-1] = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
+                    elif model_type == "molmoact":
+                        new_action[-1] = 1 if action[-1] < 0.5 else -1  # Prediction: (0,1) -> Target: (1,-1)
+                    else:
+                        raise NotImplementedError()
+
+                    # new_gripper_state = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
+                    # new_gripper_state = np.atleast_1d(np.array(new_gripper_state))
+                    # new_action = np.concatenate((new_action, new_gripper_state))
+
+                    obs, curr_task_progression, terminated, truncated, info = env.step(new_action)
                 else:
-                    raise NotImplementedError()
+                    obs, curr_task_progression, terminated, truncated, info = env.step(action)
 
-                # new_gripper_state = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
-                # new_gripper_state = np.atleast_1d(np.array(new_gripper_state))
-                # new_action = np.concatenate((new_action, new_gripper_state))
+                if curr_task_progression > task_progression:
+                    task_progression = curr_task_progression
+                    task_progression_timestamps.append(t)
+                if task_progression >= 1.0:
+                    terminal_steps -= 1
+                t += 1
 
-                obs, curr_task_progression, terminated, truncated, info = env.step(new_action)
+            if restart_requested:
+                if client is not None:
+                    client.reset()
+                if not no_record:
+                    video_recorder.cleanup()
+                continue
+
+            og.log.info(f"DEBUG: Run finished: {time.perf_counter() - start:.4f}s")
+            # ------------------------------------------------------------------------------
+
+            # Metrics calculation
+            dt = 1.0 / 15.0  # Control freq is 15Hz by default
+
+            qpos_arr = np.stack(qpos)  # (N, 8)
+            qpos_joints = qpos_arr[:, :7]
+
+            # Joint space metrics
+            if len(qpos_joints) > 4:
+                joint_vel = np.diff(qpos_joints, axis=0) / dt
+                joint_acc = np.diff(joint_vel, axis=0) / dt
+                joint_jerk = np.diff(joint_acc, axis=0) / dt
+
+                joint_vel_var = np.mean(np.var(joint_vel, axis=0) * len(joint_vel))
+                joint_acc_var = np.mean(np.var(joint_acc, axis=0) * len(joint_acc))
+                joint_jerk_metric = np.mean(np.linalg.norm(joint_jerk, axis=1))
+                joint_path_length = np.sum(np.linalg.norm(np.diff(qpos_joints, axis=0), axis=1))
             else:
-                obs, curr_task_progression, terminated, truncated, info = env.step(action)
+                joint_vel_var = 0.0
+                joint_acc_var = 0.0
+                joint_jerk_metric = 0.0
+                joint_path_length = 0.0
 
-            if curr_task_progression > task_progression:
-                task_progression = curr_task_progression
-                task_progression_timestamps.append(t)
-            if task_progression >= 1.0:
-                terminal_steps -= 1
-            t += 1
+            # Cartesian space metrics
+            ee_pos_arr = np.stack(ee_poses)
+            if len(ee_pos_arr) > 4:
+                cart_vel = np.diff(ee_pos_arr, axis=0) / dt
+                cart_acc = np.diff(cart_vel, axis=0) / dt
+                cart_jerk = np.diff(cart_acc, axis=0) / dt
 
-        og.log.info(f"DEBUG: Run finished: {time.perf_counter() - start:.4f}s")
-        # ------------------------------------------------------------------------------
+                cart_jerk_metric = np.mean(np.linalg.norm(cart_jerk, axis=1))
+                cart_path_length = np.sum(np.linalg.norm(np.diff(ee_pos_arr, axis=0), axis=1))
+            else:
+                cart_path_length = 0.0
+                cart_jerk_metric = 0.0
 
-        # Metrics calculation
-        dt = 1.0 / 15.0  # Control freq is 15Hz by default
+            stage_to_log = "SUCCESS"
+            if env.task_progression is not None:
+                for stage, is_completed in env.task_progression.items():
+                    if not is_completed:
+                        stage_to_log = stage
+                        break
+            else:
+                stage_to_log = "N/A"
 
-        qpos_arr = np.stack(qpos)  # (N, 8)
-        qpos_joints = qpos_arr[:, :7]
+            if task_progression == 1.0 and hasattr(env, "task_type") and env.task_type in ["put", "stack"]:
+                drops = max(0, drops - 1)
 
-        # Joint space metrics
-        if len(qpos_joints) > 4:
-            joint_vel = np.diff(qpos_joints, axis=0) / dt
-            joint_acc = np.diff(joint_vel, axis=0) / dt
-            joint_jerk = np.diff(joint_acc, axis=0) / dt
+            result_entry = {
+                "run_id": run_id,
+                "task": task,
+                "perturbation": perturbations[0],
+                "instruction": env.instruction,
+                "model": model_type,
+                "action_source": action_source,
+                "real2sim": "Simulated",
+                "env": "REALM",
+                "task_progression": task_progression,
+                "task_progression_timestamps": task_progression_timestamps,
+                "stage": stage_to_log,
+                "binary_SR": 1.0 if task_progression == 1.0 else 0.0,
+                "joint_vel_var": joint_vel_var,
+                "joint_acc_var": joint_acc_var,
+                "joint_jerk": joint_jerk_metric,
+                "joint_path_length": joint_path_length,
+                "cart_path_length": cart_path_length,
+                "cart_jerk": cart_jerk_metric,
+                "collisions_self": collisions_self,
+                "collisions_env": collisions_env,
+                "object_drops": drops
+            }
 
-            joint_vel_var = np.mean(np.var(joint_vel, axis=0) * len(joint_vel))
-            joint_acc_var = np.mean(np.var(joint_acc, axis=0) * len(joint_acc))
-            joint_jerk_metric = np.mean(np.linalg.norm(joint_jerk, axis=1))
-            joint_path_length = np.sum(np.linalg.norm(np.diff(qpos_joints, axis=0), axis=1))
-        else:
-            joint_vel_var = 0.0
-            joint_acc_var = 0.0
-            joint_jerk_metric = 0.0
-            joint_path_length = 0.0
-
-        # Cartesian space metrics
-        ee_pos_arr = np.stack(ee_poses)
-        if len(ee_pos_arr) > 4:
-            cart_vel = np.diff(ee_pos_arr, axis=0) / dt
-            cart_acc = np.diff(cart_vel, axis=0) / dt
-            cart_jerk = np.diff(cart_acc, axis=0) / dt
-
-            cart_jerk_metric = np.mean(np.linalg.norm(cart_jerk, axis=1))
-            cart_path_length = np.sum(np.linalg.norm(np.diff(ee_pos_arr, axis=0), axis=1))
-        else:
-            cart_path_length = 0.0
-            cart_jerk_metric = 0.0
-
-        stage_to_log = "SUCCESS"
-        if env.task_progression is not None:
-            for stage, is_completed in env.task_progression.items():
-                if not is_completed:
-                    stage_to_log = stage
-                    break
-        else:
-            stage_to_log = "N/A"
-
-        if task_progression == 1.0 and hasattr(env, "task_type") and env.task_type in ["put", "stack"]:
-            drops = max(0, drops - 1)
-
-        result_entry = {
-            "run_id": run_id,
-            "task": task,
-            "perturbation": perturbations[0],
-            "instruction": env.instruction,
-            "model": model_type,
-            "action_source": action_source,
-            "real2sim": "Simulated",
-            "env": "REALM",
-            "task_progression": task_progression,
-            "task_progression_timestamps": task_progression_timestamps,
-            "stage": stage_to_log,
-            "binary_SR": 1.0 if task_progression == 1.0 else 0.0,
-            "joint_vel_var": joint_vel_var,
-            "joint_acc_var": joint_acc_var,
-            "joint_jerk": joint_jerk_metric,
-            "joint_path_length": joint_path_length,
-            "cart_path_length": cart_path_length,
-            "cart_jerk": cart_jerk_metric,
-            "collisions_self": collisions_self,
-            "collisions_env": collisions_env,
-            "object_drops": drops
-        }
-
-        result_entry["qpos"] = np.stack(qpos).tolist()
-        result_entry["actions"] = np.stack(actions).tolist()
-        if not no_record:
-            video_bytes = video_recorder.get_video_bytes()
-            result_entry["video"] = video_bytes
+            result_entry["qpos"] = np.stack(qpos).tolist()
+            result_entry["actions"] = np.stack(actions).tolist()
+            if not no_record:
+                video_bytes = video_recorder.get_video_bytes()
+                result_entry["video"] = video_bytes
         
-        results.append(result_entry)
+            results.append(result_entry)
 
-        if not no_record:
-            append_video(log_dir, task, perturbations[0], run_id, video_bytes)
+            if not no_record:
+                append_video(log_dir, task, perturbations[0], run_id, video_bytes)
 
-        append_trajectory(log_dir, task, perturbations[0], run_id, np.stack(qpos), np.stack(actions))
+            append_trajectory(log_dir, task, perturbations[0], run_id, np.stack(qpos), np.stack(actions))
 
-        if not no_record:
-            video_recorder.cleanup()
+            if not no_record:
+                video_recorder.cleanup()
 
-        if client is not None:
-            client.reset()
+            if client is not None:
+                client.reset()
 
-        results_filename = save_results(results, log_dir + "/reports", task, perturbations[0], filename=results_filename)
+            results_filename = save_results(results, log_dir + "/reports", task, perturbations[0], filename=results_filename)
+            break
 
     # ------------------------------------------------------------------------------
     save_results(results, log_dir+"/reports", task, perturbations[0])
