@@ -307,7 +307,7 @@ class RealmEnvironmentDynamic(RealmEnvironmentBase):
         self.robot_rot_rad = np.array(robot_rot, dtype=float)
 
         cfg_robot = yaml.load(open(f"{self.config_path}/robots/{self.robot_name}.yaml", "r"), Loader=yaml.FullLoader)
-        self.ee_control = cfg_robot["robots"][0].get("ee_control", False) 
+        self.ee_control = cfg_robot["robots"][0].get("ee_control", False)
         cfg_robot["robots"][0]["position"] = robot_pos
         cfg_robot["robots"][0]["orientation"] = omnigibson_transform_utils.euler2quat(
             torch.tensor(robot_rot, dtype=torch.float32)).tolist()  
