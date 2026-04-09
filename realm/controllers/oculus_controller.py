@@ -1,10 +1,11 @@
 import time
 
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 from .oculus_reader.oculus_reader.reader import OculusReader
 
 from .subprocess_utils import run_threaded_command
-from .transformations import add_angles, euler_to_quat, quat_diff, quat_to_euler, rmat_to_quat, quat_to_rmat
+from .transformations import euler_to_quat, quat_diff, quat_to_euler, rmat_to_quat, quat_to_rmat
 
 def vec_to_reorder_mat(vec):
     X = np.zeros((len(vec), len(vec)))
@@ -177,10 +178,12 @@ class VRPolicy:
         pos_action = target_pos_offset_robot - robot_pos_offset
         robot_quat_offset = quat_diff(robot_quat, self.robot_origin["quat"])
 
-        # Calculate Euler Action #
+        # Calculate rotational action using a rotation vector. Teleop runs with
+        # cartesian_velocity control, so this avoids Euler-axis flips that can make
+        # first-person clockwise / counterclockwise motion feel inconsistent.
         target_quat_offset = quat_diff(self.vr_state["quat"], self.vr_origin["quat"])
         quat_action = quat_diff(target_quat_offset, robot_quat_offset)
-        euler_action = quat_to_euler(quat_action)
+        rot_action = R.from_quat(quat_action).as_rotvec()
 
         # Positive command opens the gripper, negative command closes it.
         if self.vr_state["gripper"] >= 0.5:
@@ -190,15 +193,16 @@ class VRPolicy:
 
         # Calculate Desired Pose #
         target_pos = self.robot_origin["pos"] + target_pos_offset_robot
-        target_euler = add_angles(euler_action, robot_euler)
+        target_quat = (R.from_quat(quat_action) * R.from_quat(robot_quat)).as_quat()
+        target_euler = quat_to_euler(target_quat)
         target_cartesian = np.concatenate([target_pos, target_euler])
         target_gripper = self.vr_state["gripper"]
 
         # Scale Appropriately #
         pos_action *= self.pos_action_gain
-        euler_action *= self.rot_action_gain
+        rot_action *= self.rot_action_gain
         gripper_action *= self.gripper_action_gain
-        lin_vel, rot_vel, gripper_vel = self._limit_velocity(pos_action, euler_action, gripper_action)
+        lin_vel, rot_vel, gripper_vel = self._limit_velocity(pos_action, rot_action, gripper_action)
         self.last_gripper_action = float(gripper_vel)
 
         # Prepare Return Values #
