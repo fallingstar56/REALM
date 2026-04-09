@@ -4,7 +4,7 @@ import numpy as np
 from .oculus_reader.oculus_reader.reader import OculusReader
 
 from .subprocess_utils import run_threaded_command
-from .transformations import add_angles, euler_to_quat, quat_diff, quat_to_euler, rmat_to_quat
+from .transformations import add_angles, add_quats, euler_to_quat, quat_diff, quat_to_euler, rmat_to_quat
 
 def vec_to_reorder_mat(vec):
     X = np.zeros((len(vec), len(vec)))
@@ -62,6 +62,10 @@ class VRPolicy:
         self.vr_state = None
         self.gripper_target = 1.0
         self.last_gripper_action = 1.0
+        self.vr_prev_pos = None
+        self.vr_prev_quat = None
+        self.accumulated_pos_offset = None
+        self.accumulated_quat_offset = None
 
     def _get_trigger_key(self):
         return "rightTrig" if self.controller_id == "r" else "leftTrig"
@@ -164,17 +168,41 @@ class VRPolicy:
         if self.reset_origin:
             self.robot_origin = {"pos": robot_pos, "quat": robot_quat}
             self.vr_origin = {"pos": self.vr_state["pos"], "quat": self.vr_state["quat"]}
+            self.vr_prev_pos = self.vr_state["pos"].copy()
+            self.vr_prev_quat = self.vr_state["quat"].copy()
+            self.accumulated_pos_offset = np.zeros(3)
+            self.accumulated_quat_offset = np.array([0., 0., 0., 1.])
             self.reset_origin = False
+
+        # Compute VR incremental changes since last step
+        vr_pos_inc = self.vr_state["pos"] - self.vr_prev_pos
+        vr_quat_inc = quat_diff(self.vr_state["quat"], self.vr_prev_quat)
+        self.vr_prev_pos = self.vr_state["pos"].copy()
+        self.vr_prev_quat = self.vr_state["quat"].copy()
+
+        # Rotate increments by current EE yaw for first-person camera alignment
+        ee_yaw = robot_euler[2]
+        cos_y, sin_y = np.cos(ee_yaw), np.sin(ee_yaw)
+        rotated_pos_inc = np.array([
+            cos_y * vr_pos_inc[0] - sin_y * vr_pos_inc[1],
+            sin_y * vr_pos_inc[0] + cos_y * vr_pos_inc[1],
+            vr_pos_inc[2]
+        ])
+        yaw_quat = euler_to_quat(np.array([0., 0., ee_yaw]))
+        yaw_quat_inv = euler_to_quat(np.array([0., 0., -ee_yaw]))
+        rotated_quat_inc = add_quats(add_quats(yaw_quat, vr_quat_inc), yaw_quat_inv)
+
+        # Accumulate rotated offsets
+        self.accumulated_pos_offset += rotated_pos_inc
+        self.accumulated_quat_offset = add_quats(rotated_quat_inc, self.accumulated_quat_offset)
 
         # Calculate Positional Action #
         robot_pos_offset = robot_pos - self.robot_origin["pos"]
-        target_pos_offset = self.vr_state["pos"] - self.vr_origin["pos"]
-        pos_action = target_pos_offset - robot_pos_offset
+        pos_action = self.accumulated_pos_offset - robot_pos_offset
 
         # Calculate Euler Action #
         robot_quat_offset = quat_diff(robot_quat, self.robot_origin["quat"])
-        target_quat_offset = quat_diff(self.vr_state["quat"], self.vr_origin["quat"])
-        quat_action = quat_diff(target_quat_offset, robot_quat_offset)
+        quat_action = quat_diff(self.accumulated_quat_offset, robot_quat_offset)
         euler_action = quat_to_euler(quat_action)
 
         # Positive command opens the gripper, negative command closes it.
