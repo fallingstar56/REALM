@@ -269,8 +269,7 @@ def evaluate(
                 else:
                     state_dict = {
                         "cartesian_position": cartesian_position,
-                        "gripper_position": gripper_state,
-                        "robot_base_yaw": float(env.robot_rot_rad[2]),
+                        "gripper_position": gripper_state
                     }
 
                     controller_info = controller.get_info()
