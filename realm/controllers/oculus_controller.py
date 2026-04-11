@@ -28,12 +28,8 @@ class VRPolicy:
         gripper_open_threshold: float = 0.35,
         gripper_close_threshold: float = 0.65,
         rmat_reorder: list = [-2, -1, -3, 4],
-        max_pos_error: float = 0.1,
-        max_rot_error: float = 0.3,
     ):
         self.oculus_reader = OculusReader()
-        self.max_pos_error = max_pos_error
-        self.max_rot_error = max_rot_error
         self.vr_to_global_mat = np.eye(4)
         self.max_lin_vel = max_lin_vel
         self.max_rot_vel = max_rot_vel
@@ -202,25 +198,10 @@ class VRPolicy:
         robot_pos_offset = robot_pos - self.robot_origin["pos"]
         pos_action = self.accumulated_pos_offset - robot_pos_offset
 
-        # Anti-windup: clamp accumulated offset so the VR target cannot drift
-        # far ahead of the actual robot position (prevents sudden acceleration
-        # after the robot is physically stuck due to collisions).
-        pos_error_norm = np.linalg.norm(pos_action)
-        if pos_error_norm > self.max_pos_error:
-            pos_action = pos_action * (self.max_pos_error / pos_error_norm)
-            self.accumulated_pos_offset = robot_pos_offset + pos_action
-
         # Calculate Euler Action #
         robot_quat_offset = quat_diff(robot_quat, self.robot_origin["quat"])
         quat_action = quat_diff(self.accumulated_quat_offset, robot_quat_offset)
         euler_action = quat_to_euler(quat_action)
-
-        # Anti-windup for rotation
-        rot_error_norm = np.linalg.norm(euler_action)
-        if rot_error_norm > self.max_rot_error:
-            euler_action = euler_action * (self.max_rot_error / rot_error_norm)
-            clamped_quat_action = euler_to_quat(euler_action)
-            self.accumulated_quat_offset = add_quats(clamped_quat_action, robot_quat_offset)
 
         # Positive command opens the gripper, negative command closes it.
         if self.vr_state["gripper"] >= 0.5:
