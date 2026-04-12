@@ -44,6 +44,7 @@ class RealmEnvironmentBase:
         self.task_type = task_type
         self.robot = robot
         self.robot_finger_links = {self.robot._links[link] for link in self.robot.finger_link_names[self.robot.default_arm]}
+        self._first_person_pose_log_state = None
 
         self.was_lifted = False
         if task_type in TASK_PROGRESS_RUBRICS:
@@ -112,6 +113,57 @@ class RealmEnvironmentBase:
         ee_link_name = self.robot.eef_link_names[self.robot.default_arm]
         ee_link = self.robot.links[ee_link_name]
         return ee_link.get_position_orientation()
+
+    def get_first_person_pose(self):
+        sensor_name = f"{self.robot.name}:gripper_link_camera:Camera:0"
+        sensor = None
+        matched_sensor_name = None
+        available_sensor_names = []
+
+        for attr_name in ("sensors", "_sensors"):
+            sensors = getattr(self.robot, attr_name, None)
+            if not hasattr(sensors, "items"):
+                continue
+
+            available_sensor_names.extend(str(key) for key in sensors.keys())
+
+            if sensor_name in sensors:
+                sensor = sensors[sensor_name]
+                matched_sensor_name = str(sensor_name)
+                break
+
+            for key, value in sensors.items():
+                if "gripper_link_camera" in str(key):
+                    sensor = value
+                    matched_sensor_name = str(key)
+                    break
+
+            if sensor is not None:
+                break
+
+        if sensor is None:
+            if self._first_person_pose_log_state != "fallback":
+                og.log.warning(
+                    "get_first_person_pose: gripper camera sensor not found for robot %s. "
+                    "Falling back to EE pose. Available sensors: %s",
+                    self.robot.name,
+                    available_sensor_names,
+                )
+                self._first_person_pose_log_state = "fallback"
+            return self.get_ee_pose()
+
+        if self._first_person_pose_log_state != matched_sensor_name:
+            og.log.info(
+                "get_first_person_pose: using gripper camera sensor '%s' for robot %s.",
+                matched_sensor_name,
+                self.robot.name,
+            )
+            self._first_person_pose_log_state = matched_sensor_name
+
+        try:
+            return sensor.get_position_orientation()
+        except TypeError:
+            return sensor.get_position_orientation(frame="world")
 
     def check_collisions(self):
         self_collision = False

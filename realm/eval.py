@@ -222,6 +222,12 @@ def evaluate(
                 _ee_pos_world = np.concatenate([_ee_pos, _ee_euler])
                 cartesian_position = env._world2robot(_ee_pos_world).astype(np.float32)
 
+                _, fp_rot = env.get_first_person_pose()
+                _fp_rot = fp_rot.cpu().numpy() if hasattr(fp_rot, 'cpu') else np.array(fp_rot)
+                first_person_quat = (
+                    Rot.from_euler('z', -float(env.robot_rot_rad[2])) * Rot.from_quat(_fp_rot)
+                ).as_quat().astype(np.float32)
+
                 # Check for collisions
                 is_self_col, is_env_col = env.check_collisions()
                 if is_self_col and not is_self_col_active:
@@ -269,7 +275,8 @@ def evaluate(
                 else:
                     state_dict = {
                         "cartesian_position": cartesian_position,
-                        "gripper_position": gripper_state
+                        "gripper_position": gripper_state,
+                        "first_person_quat": first_person_quat,
                     }
 
                     controller_info = controller.get_info()
