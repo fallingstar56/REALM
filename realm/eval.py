@@ -178,6 +178,7 @@ def evaluate(
 
         controller = None
         last_reset_pressed = False
+        last_exit_pressed = False
         if action_source == "teleop":
             controller = VRPolicy(robot_base_yaw=env.robot_rot_rad[2])
 
@@ -208,6 +209,7 @@ def evaluate(
             drops = 0
             was_grasping = False
             restart_requested = False
+            exit_requested = False
 
             while (not enforce_max_steps_limit or t < max_steps) and (not enforce_terminal_step_limit or terminal_steps > 0):
                 # Extract the relevant information from the observation for the model
@@ -284,10 +286,19 @@ def evaluate(
                     reset_triggered = reset_pressed and not last_reset_pressed
                     last_reset_pressed = reset_pressed
 
+                    exit_pressed = controller_info["failure"]
+                    exit_triggered = exit_pressed and not last_exit_pressed
+                    last_exit_pressed = exit_pressed
+
                     if reset_triggered:
                         og.log.info("Teleop reset requested from BUTTON A. Restarting current rollout.")
                         controller.reset_state()
                         restart_requested = True
+                        break
+
+                    if exit_triggered:
+                        og.log.info("Teleop save requested from BUTTON B. Finalizing current rollout.")
+                        exit_requested = True
                         break
 
                     has_pose = controller._state["poses"] != {}
@@ -337,6 +348,14 @@ def evaluate(
                 if not no_record:
                     video_recorder.cleanup()
                 continue
+
+            if exit_requested and len(qpos) == 0:
+                og.log.warning("Teleop save requested before any samples were collected. Exiting without writing trajectory files.")
+                if not no_record:
+                    video_recorder.cleanup()
+                if client is not None:
+                    client.reset()
+                break
 
             og.log.info(f"DEBUG: Run finished: {time.perf_counter() - start:.4f}s")
             # ------------------------------------------------------------------------------
