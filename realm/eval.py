@@ -4,8 +4,11 @@ import time
 import os
 import random
 import csv
+import json
+import shutil
 import numpy as np
 import torch
+from PIL import Image
 from scipy.spatial.transform import Rotation as Rot
 
 import omnigibson as og
@@ -13,7 +16,7 @@ from omnigibson.macros import gm
 
 from realm.environments.env_dynamic import RealmEnvironmentDynamic
 from realm.inference import InferenceClient, extract_from_obs
-from realm.realm_logging import VideoRecorder, save_results, append_trajectory, append_video
+from realm.realm_logging import VideoRecorder, save_results
 from realm.controllers.oculus_controller import VRPolicy
 
 
@@ -52,6 +55,79 @@ SUPPORTED_PERTURBATIONS = [
 SUPPORTED_ACTION_SOURCES = ["policy", "teleop"]
 # policy: get actions from a model inference server
 # teleop: get actions from  OCulus VR controller teleoperation (currently only supports DROID EE controller config with cartesian velocity control)
+
+RECORD_INTERVAL_SEC = 0.05
+
+
+def _ensure_uint8_hwc(img):
+    img = np.asarray(img)
+
+    if img.ndim == 3 and img.shape[0] in (1, 3) and img.shape[-1] not in (1, 3):
+        img = img.transpose(1, 2, 0)
+
+    if img.dtype != np.uint8:
+        img_float = img.astype(np.float32)
+        if img_float.size > 0 and img_float.max() <= 1.5:
+            img_float = img_float * 255.0
+        img = np.clip(img_float, 0, 255).astype(np.uint8)
+
+    if img.ndim == 2:
+        img = np.stack([img, img, img], axis=-1)
+    if img.ndim == 3 and img.shape[-1] == 1:
+        img = np.repeat(img, 3, axis=-1)
+
+    return img
+
+
+def _save_jpg(path, img_u8, quality=95):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    Image.fromarray(img_u8).save(path, format="JPEG", quality=quality, subsampling=0)
+
+
+def _record_rollout_sample(
+    frames_file,
+    frame_index,
+    img_dir,
+    img_sec_dir,
+    wrist_dir,
+    base_im,
+    base_im_second,
+    wrist_im,
+    robot_state,
+    gripper_state,
+    action,
+):
+    base_u8 = _ensure_uint8_hwc(base_im)
+    base_sec_u8 = _ensure_uint8_hwc(base_im_second if base_im_second is not None else np.zeros_like(base_u8))
+    wrist_u8 = _ensure_uint8_hwc(wrist_im)
+
+    img_name = f"{frame_index:06d}.jpg"
+
+    _save_jpg(os.path.join(img_dir, img_name), base_u8)
+    _save_jpg(os.path.join(img_sec_dir, img_name), base_sec_u8)
+    _save_jpg(os.path.join(wrist_dir, img_name), wrist_u8)
+
+    frame_obj = {
+        "index": frame_index,
+        "image": f"image/{img_name}",
+        "image_sec": f"image_sec/{img_name}",
+        "wrist_image": f"wrist_image/{img_name}",
+        "robot_state": np.asarray(robot_state, dtype=np.float32).tolist(),
+        "gripper_state": np.atleast_1d(np.asarray(gripper_state, dtype=np.float32)).tolist(),
+        "action": np.asarray(action, dtype=np.float32).tolist(),
+    }
+    frames_file.write(json.dumps(frame_obj, ensure_ascii=False) + "\n")
+
+
+def _cleanup_rollout_recording(video_recorder=None, frames_file=None, info_dir=None, discard_info=False):
+    if frames_file is not None and not frames_file.closed:
+        frames_file.close()
+
+    if video_recorder is not None:
+        video_recorder.cleanup()
+
+    if discard_info and info_dir is not None and os.path.isdir(info_dir):
+        shutil.rmtree(info_dir, ignore_errors=True)
 
 def set_sim_config(rendering_mode=None, robot="DROID"):
     if robot == "WidowX": # TODO: just read this from the yamls...
@@ -122,6 +198,9 @@ def evaluate(
     perturbations = [SUPPORTED_PERTURBATIONS[perturbation_id]]
 
     os.makedirs(log_dir, exist_ok=True)
+    if not no_record:
+        os.makedirs(os.path.join(log_dir, "videos"), exist_ok=True)
+        os.makedirs(os.path.join(log_dir, "information"), exist_ok=True)
 
     client = None
     if action_source == "policy":
@@ -184,14 +263,36 @@ def evaluate(
 
         while True:
             timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H:%M:%S")
-            video_recorder = VideoRecorder(log_dir, timestamp, run_id, task, perturbations[0])
+            rollout_name = f"{timestamp}_{model_type}_rollout_{task}_{perturbations[0]}_{run_id}"
+            video_recorder = VideoRecorder(log_dir, timestamp, run_id, task, perturbations[0]) if not no_record else None
 
             qpos = []
             actions = []
             action_buffer = Queue()
+            frames_f = None
+            info_dir = None
+            img_dir = None
+            img_sec_dir = None
+            wrist_dir = None
+            last_record_time = -1e9
+            frame_index = 0
 
             # -------------------- Rollout loop --------------------
             obs, _ = env.reset()
+            if not no_record:
+                info_dir = os.path.join(log_dir, "information", rollout_name)
+                img_dir = os.path.join(info_dir, "image")
+                img_sec_dir = os.path.join(info_dir, "image_sec")
+                wrist_dir = os.path.join(info_dir, "wrist_image")
+                os.makedirs(img_dir, exist_ok=True)
+                os.makedirs(img_sec_dir, exist_ok=True)
+                os.makedirs(wrist_dir, exist_ok=True)
+
+                with open(os.path.join(info_dir, "task.json"), "w", encoding="utf-8") as task_file:
+                    json.dump({"task": str(env.instruction)}, task_file, ensure_ascii=False)
+
+                frames_f = open(os.path.join(info_dir, "frames.jsonl"), "w", encoding="utf-8")
+
             obs, rew, terminated, truncated, info = env.warmup(obs)
 
             t = 0
@@ -308,32 +409,43 @@ def evaluate(
                     else:
                         action = controller._calculate_action(state_dict, False).astype(np.float32)
                         action = np.clip(action, -1.0, 1.0)
-            
+
+                if action_source == "policy":
+                    executed_action = np.asarray(action, dtype=np.float32).copy()
+                    if model_type in ["debug", "openpi", "GR00T", "GR00T_N16", "dreamzero"]: # TODO: use a model config
+                        executed_action[-1] = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
+                    elif model_type == "molmoact":
+                        executed_action[-1] = 1 if action[-1] < 0.5 else -1  # Prediction: (0,1) -> Target: (1,-1)
+                    else:
+                        raise NotImplementedError()
+                else:
+                    executed_action = np.asarray(action, dtype=np.float32).copy()
+
                 if not no_record:
                     video_recorder.add_frame(base_im, wrist_im, base_im_second)
 
-                qpos.append(np.concatenate((robot_state, np.atleast_1d(np.array(gripper_state)))))
-                # 8D action: 7 for joints, 1 for gripper
+                    current_time = time.perf_counter()
+                    if (current_time - last_record_time) >= RECORD_INTERVAL_SEC:
+                        last_record_time = current_time
+                        _record_rollout_sample(
+                            frames_f,
+                            frame_index,
+                            img_dir,
+                            img_sec_dir,
+                            wrist_dir,
+                            base_im,
+                            base_im_second,
+                            wrist_im,
+                            robot_state,
+                            gripper_state,
+                            executed_action,
+                        )
+                        frame_index += 1
 
-                # During each loop, we execute one action
-                actions.append(action)
+                qpos.append(np.concatenate((robot_state, np.atleast_1d(np.asarray(gripper_state)))))
+                actions.append(executed_action)
 
-                if action_source == "policy":
-                    new_action = action.copy()
-                    if model_type in ["debug", "openpi", "GR00T", "GR00T_N16", "dreamzero"]: # TODO: use a model config
-                        new_action[-1] = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
-                    elif model_type == "molmoact":
-                        new_action[-1] = 1 if action[-1] < 0.5 else -1  # Prediction: (0,1) -> Target: (1,-1)
-                    else:
-                        raise NotImplementedError()
-
-                    # new_gripper_state = 1 if action[-1] > 0.5 else -1  # Prediction: (1,0) -> Target: (1,-1)
-                    # new_gripper_state = np.atleast_1d(np.array(new_gripper_state))
-                    # new_action = np.concatenate((new_action, new_gripper_state))
-
-                    obs, curr_task_progression, terminated, truncated, info = env.step(new_action)
-                else:
-                    obs, curr_task_progression, terminated, truncated, info = env.step(action)
+                obs, curr_task_progression, terminated, truncated, info = env.step(executed_action)
 
                 if curr_task_progression > task_progression:
                     task_progression = curr_task_progression
@@ -345,14 +457,12 @@ def evaluate(
             if restart_requested:
                 if client is not None:
                     client.reset()
-                if not no_record:
-                    video_recorder.cleanup()
+                _cleanup_rollout_recording(video_recorder=video_recorder, frames_file=frames_f, info_dir=info_dir, discard_info=True)
                 continue
 
             if exit_requested and len(qpos) == 0:
-                og.log.warning("Teleop save requested before any samples were collected. Exiting without writing trajectory files.")
-                if not no_record:
-                    video_recorder.cleanup()
+                og.log.warning("Teleop save requested before any samples were collected. Exiting without writing recorded files.")
+                _cleanup_rollout_recording(video_recorder=video_recorder, frames_file=frames_f, info_dir=info_dir, discard_info=True)
                 if client is not None:
                     client.reset()
                 break
@@ -433,19 +543,13 @@ def evaluate(
 
             result_entry["qpos"] = np.stack(qpos).tolist()
             result_entry["actions"] = np.stack(actions).tolist()
-            if not no_record:
-                video_bytes = video_recorder.get_video_bytes()
-                result_entry["video"] = video_bytes
         
             results.append(result_entry)
 
             if not no_record:
-                append_video(log_dir, task, perturbations[0], run_id, video_bytes)
+                video_recorder.save_video(os.path.join(log_dir, "videos", rollout_name))
 
-            append_trajectory(log_dir, task, perturbations[0], run_id, np.stack(qpos), np.stack(actions))
-
-            if not no_record:
-                video_recorder.cleanup()
+            _cleanup_rollout_recording(video_recorder=video_recorder, frames_file=frames_f)
 
             if client is not None:
                 client.reset()
